@@ -1,6 +1,13 @@
 # ACIS POS
 
-## Brand UI v1.2
+### Update v1.3
+- Login awal diperbarui: logo tampil lebih jernih dan dilengkapi preview mini dashboard fitur unggulan.
+- Daftar transaksi Penjualan, Pembelian, dan Biaya Operasional kini memiliki tombol **Edit** dan **Hapus**.
+- Penghapusan penjualan mengembalikan stok; penghapusan pembelian membalik stok jika stok masih mencukupi.
+- Edit transaksi penjualan dibatasi pada pelanggan, metode pembayaran, diskon, dan nominal bayar agar histori stok tetap konsisten.
+
+
+## Brand UI v1.3
 
 Versi ini menggunakan identitas final ACIS POS dengan palet oranye-hijau dan tagline **“Solusi Kasir Cerdas untuk Bisnis Bertumbuh”**. Asset utama berada di `public/assets/acis-pos-logo.png` dan icon ringkas di `public/assets/acis-pos-icon.png`. Seluruh UI utama sudah diselaraskan dengan palet tersebut.
 

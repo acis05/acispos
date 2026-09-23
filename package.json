@@ -1,6 +1,6 @@
 {
   "name": "acis-pos",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "private": true,
   "description": "ACIS POS - Web based POS, inventory and business management",
   "type": "module",

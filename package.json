@@ -1,8 +1,8 @@
 {
   "name": "acis-pos-saas",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "private": true,
-  "description": "ACIS POS SaaS - PostgreSQL multi-tenant POS, inventory and business management",
+  "description": "ACIS POS SaaS v2.1 - PostgreSQL multi-tenant POS with product photos, reporting center, receipt settings and Accurate Online integration foundation",
   "type": "module",
   "scripts": {
     "migrate": "node scripts/migrate.js",

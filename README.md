@@ -1,8 +1,8 @@
-# ACIS POS v2.0 SaaS Foundation
+# ACIS POS v2.1 SaaS Business & Reporting Update
 
 **Solusi Kasir Cerdas untuk Bisnis Bertumbuh**
 
-ACIS POS v2 mengubah fondasi v1.x menjadi SaaS berbasis **PostgreSQL**, **multi-tenant**, dan **multi-outlet**. UI kasir, produk, stok ledger, pembelian, penjualan, pelanggan/supplier, laporan, biaya, user, pengaturan, dan audit tetap dipertahankan, tetapi data tidak lagi disimpan sebagai file JSON lokal.
+ACIS POS v2.1 melanjutkan fondasi SaaS **PostgreSQL**, **multi-tenant**, dan **multi-outlet** dengan penyempurnaan kasir, master data, pengaturan struk, pusat laporan, dan fondasi integrasi Accurate Online.
 
 ## Yang sudah tersedia
 
@@ -23,6 +23,16 @@ ACIS POS v2 mengubah fondasi v1.x menjadi SaaS berbasis **PostgreSQL**, **multi-
 - Penghapusan transaksi membalik mutasi stok secara aman.
 - Migration dan seed otomatis saat Railway start.
 - Dokumen pola PostgreSQL RLS di `docs/RLS.md`.
+
+
+## Update v2.1
+
+- Foto produk dapat diunggah dari menu Produk dan tampil pada kartu item Kasir (POS). Untuk MVP foto disimpan sebagai data URI di PostgreSQL; untuk produksi skala besar disarankan pindah ke object storage/CDN.
+- Tombol **Edit** dan **Hapus** tersedia pada Produk, Pelanggan, dan Supplier. Penghapusan produk menggunakan soft-delete agar histori transaksi tetap aman.
+- Tab **Struk** di Pengaturan sudah aktif: header, footer, lebar kertas 58/80 mm, tampilkan logo, dan preview struk.
+- Pusat laporan baru: Penjualan per Barang, Metode Bayar, Shift (ringkasan tanggal+kasir), Pelanggan, Pembelian per Barang, Pemasok, Hutang, Piutang, Penerimaan Uang per Metode Bayar, Buku Besar, Laba Rugi, dan Neraca.
+- Buku Besar dan Neraca pada v2.1 adalah **laporan manajerial/estimasi** yang diturunkan dari transaksi POS, pembelian, biaya, saldo stok, hutang, dan piutang. Untuk akuntansi formal penuh, tahap berikutnya adalah jurnal double-entry otomatis dan Chart of Accounts.
+- Menu **Integrasi Accurate Online** ditambahkan. Konfigurasi tenant, pilihan objek sinkron, dan tabel penyimpanan integrasi sudah tersedia. OAuth dan sinkronisasi API penuh perlu kredensial aplikasi Accurate Online yang resmi sebelum diaktifkan ke produksi. Accurate Online menggunakan OAuth 2.0 untuk aplikasi komersial.
 
 ## Struktur SaaS
 

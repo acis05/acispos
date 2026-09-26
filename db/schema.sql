@@ -253,3 +253,22 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_audit_tenant_date ON audit_logs(tenant_id, at DESC);
+
+
+-- v2.1 additions: product photos, receipt configuration, Accurate Online integration
+ALTER TABLE products ADD COLUMN IF NOT EXISTS image_data text NOT NULL DEFAULT '';
+ALTER TABLE tenant_settings ADD COLUMN IF NOT EXISTS receipt_header text NOT NULL DEFAULT '';
+ALTER TABLE tenant_settings ADD COLUMN IF NOT EXISTS receipt_paper_width integer NOT NULL DEFAULT 80;
+ALTER TABLE tenant_settings ADD COLUMN IF NOT EXISTS receipt_show_logo boolean NOT NULL DEFAULT true;
+
+CREATE TABLE IF NOT EXISTS integrations (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  provider varchar(60) NOT NULL,
+  status varchar(30) NOT NULL DEFAULT 'not_connected',
+  config jsonb NOT NULL DEFAULT '{}'::jsonb,
+  last_sync_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(tenant_id, provider)
+);

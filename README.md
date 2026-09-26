@@ -1,99 +1,103 @@
-# ACIS POS
+# ACIS POS v2.0 SaaS Foundation
 
-### Update v1.3
-- Login awal diperbarui: logo tampil lebih jernih dan dilengkapi preview mini dashboard fitur unggulan.
-- Daftar transaksi Penjualan, Pembelian, dan Biaya Operasional kini memiliki tombol **Edit** dan **Hapus**.
-- Penghapusan penjualan mengembalikan stok; penghapusan pembelian membalik stok jika stok masih mencukupi.
-- Edit transaksi penjualan dibatasi pada pelanggan, metode pembayaran, diskon, dan nominal bayar agar histori stok tetap konsisten.
+**Solusi Kasir Cerdas untuk Bisnis Bertumbuh**
 
+ACIS POS v2 mengubah fondasi v1.x menjadi SaaS berbasis **PostgreSQL**, **multi-tenant**, dan **multi-outlet**. UI kasir, produk, stok ledger, pembelian, penjualan, pelanggan/supplier, laporan, biaya, user, pengaturan, dan audit tetap dipertahankan, tetapi data tidak lagi disimpan sebagai file JSON lokal.
 
-## Brand UI v1.3
+## Yang sudah tersedia
 
-Versi ini menggunakan identitas final ACIS POS dengan palet oranye-hijau dan tagline **“Solusi Kasir Cerdas untuk Bisnis Bertumbuh”**. Asset utama berada di `public/assets/acis-pos-logo.png` dan icon ringkas di `public/assets/acis-pos-icon.png`. Seluruh UI utama sudah diselaraskan dengan palet tersebut.
+- PostgreSQL sebagai database utama.
+- `tenant_id` pada seluruh data bisnis penting.
+- Stok dan transaksi per outlet dengan `outlet_id`.
+- Login tenant-aware dan outlet-aware.
+- Owner/user dapat terhubung ke tenant melalui `tenant_users`.
+- Role & permission foundation.
+- Paket `STARTER`, `BUSINESS`, dan `PRO`.
+- Trial otomatis 14 hari (dapat diubah lewat `DEFAULT_TRIAL_DAYS`).
+- Subscription guard untuk operasi yang mengubah data.
+- Batas jumlah user mengikuti paket.
+- Onboarding tenant baru melalui API.
+- Platform Admin untuk melihat tenant, user, outlet, MRR, dan suspend/aktifkan tenant.
+- Audit log tenant-aware.
+- Edit/hapus penjualan, pembelian, dan biaya tetap tersedia.
+- Penghapusan transaksi membalik mutasi stok secara aman.
+- Migration dan seed otomatis saat Railway start.
+- Dokumen pola PostgreSQL RLS di `docs/RLS.md`.
 
-ACIS POS adalah aplikasi POS berbasis web dengan modul kasir, produk, stok ledger, pembelian, penjualan, pelanggan/supplier, biaya, laporan, user/role, audit log, dan pengaturan usaha.
+## Struktur SaaS
 
-Proyek ini dibuat sebagai implementasi baru dengan UI dan identitas ACIS POS yang berbeda dari aplikasi referensi yang dilampirkan.
+```text
+ACIS POS App
+├─ Tenant A
+│  ├─ Outlet A1
+│  └─ Outlet A2
+├─ Tenant B
+│  └─ Outlet B1
+└─ Platform Admin
 
-## Fitur utama
+PostgreSQL
+├─ tenants / outlets
+├─ users / tenant_users / roles
+├─ subscription_plans / subscriptions
+├─ products / stock_balances / stock_ledger
+├─ sales / sale_items
+├─ purchases / purchase_items
+├─ partners / expenses
+└─ audit_logs
+```
 
-- Dashboard omzet, transaksi, stok menipis, tren 7 hari
-- Kasir/POS: keranjang, diskon, pelanggan, pembayaran tunai/transfer/QRIS/kartu, cetak struk
-- Hold transaction
-- Master produk: SKU, barcode, kategori, satuan, harga pokok, harga jual, stok minimum
-- Stok ledger otomatis dari penjualan, pembelian, stok awal, dan penyesuaian
-- Pembelian dan penerimaan stok
-- Riwayat penjualan
-- Pelanggan dan supplier + poin pelanggan
-- Biaya operasional
-- Laporan omzet, HPP, laba kotor, biaya, laba bersih, produk terlaris
-- User & role dasar
-- Audit log
-- Pengaturan profil usaha dan footer struk
-- Responsive desktop/mobile
-- Logo final ACIS POS sudah termasuk di `public/assets/acis-pos-logo.png`
-- Ikon aplikasi/favicon ada di `public/assets/acis-pos-icon.png`
-- Tagline brand: **Solusi Kasir Cerdas untuk Bisnis Bertumbuh**
-- Palet UI utama diselaraskan dengan identitas ACIS: hijau dan oranye
+## Deploy Railway
 
-## Login awal
+1. Upload isi folder repository ini ke GitHub.
+2. Buat project Railway dari GitHub repo.
+3. Tambahkan service **PostgreSQL** di project Railway.
+4. Railway biasanya menyediakan `DATABASE_URL` ke service aplikasi melalui variable reference. Pastikan variable tersebut tersedia di service ACIS POS.
+5. Tambahkan `JWT_SECRET` yang panjang dan acak.
+6. Opsional: `DEFAULT_TRIAL_DAYS=14` dan `DATABASE_SSL=false` untuk koneksi private Railway.
+7. Deploy. Start command akan menjalankan `npm run migrate`, `npm run seed`, lalu server.
+
+`railway.json` sudah memakai `/api/health` sebagai healthcheck.
+
+## Demo awal
 
 - Username: `admin`
 - Password: `admin123`
 
-**Segera ganti implementasi password/default user untuk penggunaan produksi.** Versi starter ini menyediakan alur admin awal agar deployment langsung bisa diuji.
+Akun seed ini juga memiliki flag Platform Admin agar menu **Platform Admin** dapat diuji. Ganti password setelah deploy produksi.
 
-## Jalankan lokal
+## Onboarding tenant baru
 
-```bash
-cp .env.example .env
-npm install
-npm start
+Endpoint publik foundation:
+
+```http
+POST /api/onboarding/register
+Content-Type: application/json
 ```
 
-Buka `http://localhost:3000`.
+Contoh body:
 
-## Deploy ke Railway
-
-1. Buat repository baru di GitHub.
-2. Upload seluruh isi folder proyek ini ke repository tersebut.
-3. Di Railway, pilih **New Project → Deploy from GitHub Repo**.
-4. Pilih repository ACIS POS.
-5. Tambahkan environment variable:
-   - `JWT_SECRET` = string acak panjang
-   - `APP_NAME` = `ACIS POS`
-   - `DATA_DIR` = `/data` bila menggunakan Railway Volume
-6. Untuk data persisten, tambahkan **Railway Volume** dan mount ke `/data`.
-7. Railway akan menjalankan `npm start` otomatis. Healthcheck tersedia di `/api/health`.
-
-### Catatan penyimpanan
-
-Starter ini memakai file JSON lokal supaya sangat mudah di-deploy tanpa database eksternal. Untuk produksi multi-cabang/high concurrency, disarankan migrasi data layer ke PostgreSQL Railway. Struktur API/frontend sudah dipisah agar migrasi itu mudah dilakukan.
-
-## Struktur
-
-```text
-acis-pos/
-├─ public/
-│  ├─ assets/acis-pos-logo.png
-│  ├─ index.html
-│  ├─ styles.css
-│  └─ app.js
-├─ data/.gitkeep
-├─ server.js
-├─ package.json
-├─ railway.json
-├─ Dockerfile
-├─ .env.example
-└─ README.md
+```json
+{
+  "businessName": "Toko Maju Jaya",
+  "outletName": "Cabang Utama",
+  "name": "Owner Toko",
+  "username": "owner.majujaya",
+  "password": "password-kuat",
+  "email": "owner@example.com",
+  "planCode": "STARTER"
+}
 ```
 
-## Railway persistence
+Endpoint membuat tenant, outlet utama, owner Administrator, role default, master kategori/satuan, pelanggan/supplier default, dan subscription trial.
 
-Tanpa Volume, filesystem deployment Railway dapat bersifat ephemeral. Untuk data transaksi yang harus bertahan, gunakan Railway Volume pada `/data` atau pindahkan repository penyimpanan ke PostgreSQL.
+## Catatan keamanan penting
 
-## Cakupan dibanding referensi StokLedger
+- `tenant_id` tidak diambil dari query string/body browser untuk scoping data. Tenant aktif berasal dari JWT yang dibuat server.
+- Semua SKU unik di dalam satu tenant (`UNIQUE(tenant_id, sku)`), bukan global.
+- Semua query transaksi menggunakan `tenant_id`, dan transaksi stok juga menggunakan `outlet_id`.
+- Untuk hardening berikutnya, aktifkan PostgreSQL RLS menggunakan pola di `docs/RLS.md` dan gunakan role database aplikasi khusus.
+- Tambahkan rate limiting, CSRF strategy bila beralih ke cookie auth, email verification, reset password, MFA untuk platform admin, dan secret rotation sebelum go-live skala besar.
 
-Cakupan yang sudah diimplementasikan sebagai alur aktif: Dashboard, POS, produk, stok ledger, penyesuaian stok, pembelian/penerimaan stok, riwayat penjualan, pelanggan & supplier, poin pelanggan dasar, biaya operasional, laporan laba sederhana, user/role dasar, audit log, dan pengaturan usaha/struk.
+## Billing berikutnya
 
-Referensi yang teridentifikasi tetapi **belum diimplementasikan penuh pada starter v1.0**: akuntansi double-entry/COA & jurnal umum lengkap, piutang/hutang & aging, fixed assets/depresiasi, project costing, sales order/purchase order workflow lengkap, retur lengkap, import Excel/PDF bank, document designer, promo engine bertingkat, multi-warehouse transfer, serta role permission granular per aksi. Modul-modul ini sebaiknya menjadi fase berikutnya bila ACIS POS akan mengejar paritas penuh dengan referensi.
+Tabel subscription sudah siap untuk dihubungkan ke payment gateway. Tahap lanjutan yang disarankan: invoice SaaS, webhook pembayaran, grace period otomatis, notifikasi jatuh tempo, serta upgrade/downgrade paket.

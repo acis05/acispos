@@ -1,11 +1,11 @@
-# ACIS POS v2.3 — SaaS Business Edition
+# ACIS POS v2.3.1 — SaaS Business Edition
 
 **Tagline:** Solusi Kasir Cerdas untuk Bisnis Bertumbuh.
 
 Versi 2.3 mempertahankan PostgreSQL multi-tenant dan memperbarui pengalaman customer serta kontrol internal ACIS.
 
 
-## Update utama v2.3
+## Update utama v2.3.1
 
 - Registrasi akun mandiri dari halaman login dengan **trial otomatis 7 hari**.
 - Halaman login customer tidak lagi menampilkan istilah teknis database/arsitektur.

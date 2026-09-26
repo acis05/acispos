@@ -65,7 +65,7 @@ async function accurateRefreshIfNeeded(tenantId,row){if(!row?.access_token)retur
 function activeSubscription(req,res,next){const s=req.ctx.subscription;if(!s)return res.status(402).json({error:'Langganan belum aktif.'});const deadline=new Date(s.grace_until||s.expires_at);if(['cancelled','suspended'].includes(s.status)||deadline<new Date())return res.status(402).json({error:'Langganan ACIS POS telah berakhir. Silakan perpanjang untuk melanjutkan transaksi.'});next()}
 const safeUser=(u,ctx)=>({id:u.id,name:u.name,username:u.username,email:u.email||'',role:ctx.role,active:u.active,createdAt:u.created_at,tenant:{id:ctx.tenantId,name:ctx.tenantName},outlet:{id:ctx.outletId,name:ctx.outletName},subscription:ctx.subscription});
 
-app.get('/api/health',async(req,res)=>{try{await pool.query('SELECT 1');res.json({status:'ok',app:APP_NAME,version:'2.3.0',database:'postgresql',multiTenant:true,time:now()})}catch(e){res.status(503).json({status:'error',database:'unavailable'})}});
+app.get('/api/health',async(req,res)=>{try{await pool.query('SELECT 1');res.json({status:'ok',app:APP_NAME,version:'2.3.1',database:'postgresql',multiTenant:true,time:now()})}catch(e){res.status(503).json({status:'error',database:'unavailable'})}});
 
 app.post('/api/login',async(req,res)=>{
   const {username,password,tenantId,outletId}=req.body||{};

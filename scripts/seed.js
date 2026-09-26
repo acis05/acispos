@@ -27,7 +27,7 @@ try{
  await c.query(`INSERT INTO tenant_settings(tenant_id,company_name,address,receipt_footer) VALUES($1,'ACIS Demo Store','Jakarta, Indonesia','Terima kasih sudah berbelanja.') ON CONFLICT(tenant_id) DO NOTHING`,[ids.tenant]);
  const plan=(await c.query(`SELECT id FROM subscription_plans WHERE code='MONTHLY'`)).rows[0];
  await c.query(`INSERT INTO subscriptions(tenant_id,plan_id,status,started_at,expires_at)
- SELECT $1,$2,'trial',now(),now()+interval '14 days' WHERE NOT EXISTS(SELECT 1 FROM subscriptions WHERE tenant_id=$1)`,[ids.tenant,plan.id]);
+ SELECT $1,$2,'trial',now(),now()+interval '7 days' WHERE NOT EXISTS(SELECT 1 FROM subscriptions WHERE tenant_id=$1)`,[ids.tenant,plan.id]);
  for(const name of ['Makanan','Minuman','Lainnya']) await c.query(`INSERT INTO categories(tenant_id,name) VALUES($1,$2) ON CONFLICT(tenant_id,name) DO NOTHING`,[ids.tenant,name]);
  for(const name of ['Pcs','Box','Botol']) await c.query(`INSERT INTO units(tenant_id,name) VALUES($1,$2) ON CONFLICT(tenant_id,name) DO NOTHING`,[ids.tenant,name]);
  const cats=Object.fromEntries((await c.query(`SELECT id,name FROM categories WHERE tenant_id=$1`,[ids.tenant])).rows.map(x=>[x.name,x.id]));

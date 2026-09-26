@@ -7,10 +7,13 @@ const c=await pool.connect();
 try{
  await c.query('BEGIN');
  await c.query(`INSERT INTO subscription_plans(code,name,price_monthly,max_outlets,max_users,features) VALUES
- ('STARTER','Starter',100000,1,3,'{"reports":true,"inventory":true}'::jsonb),
- ('BUSINESS','Business',200000,3,10,'{"reports":true,"inventory":true,"multiOutlet":true}'::jsonb),
- ('PRO','Pro',350000,10,50,'{"reports":true,"inventory":true,"multiOutlet":true,"prioritySupport":true}'::jsonb)
- ON CONFLICT(code) DO NOTHING`);
+ ('MONTHLY','Paket Bulanan',100000,1,99,'{"billingCycle":"monthly","reports":true,"inventory":true,"accurate":true}'::jsonb),
+ ('ANNUAL','Paket Tahunan',1000000,1,99,'{"billingCycle":"annual","reports":true,"inventory":true,"accurate":true}'::jsonb)
+ ON CONFLICT(code) DO UPDATE SET name=EXCLUDED.name,price_monthly=EXCLUDED.price_monthly,max_outlets=EXCLUDED.max_outlets,max_users=EXCLUDED.max_users,features=EXCLUDED.features,active=true`);
+ await c.query(`UPDATE subscription_plans SET active=false WHERE code NOT IN ('MONTHLY','ANNUAL')`);
+ const monthlyPlan=(await c.query(`SELECT id FROM subscription_plans WHERE code='MONTHLY'`)).rows[0];
+ await c.query(`UPDATE subscriptions s SET plan_id=$1 WHERE plan_id IN (SELECT id FROM subscription_plans WHERE code NOT IN ('MONTHLY','ANNUAL'))`,[monthlyPlan.id]);
+
  await c.query(`INSERT INTO tenants(id,code,name,status) VALUES($1,'DEMO','ACIS Demo Store','active') ON CONFLICT(id) DO NOTHING`,[ids.tenant]);
  await c.query(`INSERT INTO outlets(id,tenant_id,code,name,address) VALUES($1,$2,'MAIN','Toko Utama','Jakarta, Indonesia') ON CONFLICT(id) DO NOTHING`,[ids.outlet,ids.tenant]);
  await c.query(`INSERT INTO users(id,name,username,email,password_hash,is_platform_admin) VALUES($1,'Administrator','admin','admin@acispos.local',$2,true)
@@ -22,7 +25,7 @@ try{
  ON CONFLICT DO NOTHING`,[ids.roleAdmin,ids.roleKasir,ids.roleManager,ids.tenant]);
  await c.query(`INSERT INTO tenant_users(tenant_id,user_id,role_id,default_outlet_id) VALUES($1,$2,$3,$4) ON CONFLICT(tenant_id,user_id) DO UPDATE SET active=true`,[ids.tenant,ids.admin,ids.roleAdmin,ids.outlet]);
  await c.query(`INSERT INTO tenant_settings(tenant_id,company_name,address,receipt_footer) VALUES($1,'ACIS Demo Store','Jakarta, Indonesia','Terima kasih sudah berbelanja.') ON CONFLICT(tenant_id) DO NOTHING`,[ids.tenant]);
- const plan=(await c.query(`SELECT id FROM subscription_plans WHERE code='STARTER'`)).rows[0];
+ const plan=(await c.query(`SELECT id FROM subscription_plans WHERE code='MONTHLY'`)).rows[0];
  await c.query(`INSERT INTO subscriptions(tenant_id,plan_id,status,started_at,expires_at)
  SELECT $1,$2,'trial',now(),now()+interval '14 days' WHERE NOT EXISTS(SELECT 1 FROM subscriptions WHERE tenant_id=$1)`,[ids.tenant,plan.id]);
  for(const name of ['Makanan','Minuman','Lainnya']) await c.query(`INSERT INTO categories(tenant_id,name) VALUES($1,$2) ON CONFLICT(tenant_id,name) DO NOTHING`,[ids.tenant,name]);
@@ -43,6 +46,14 @@ try{
  }
  await c.query(`INSERT INTO partners(tenant_id,code,type,name) VALUES($1,'CUST-001','customer','Pelanggan Umum') ON CONFLICT(tenant_id,code) DO NOTHING`,[ids.tenant]);
  await c.query(`INSERT INTO partners(tenant_id,code,type,name) VALUES($1,'SUP-001','supplier','Supplier Utama') ON CONFLICT(tenant_id,code) DO NOTHING`,[ids.tenant]);
+
+ const coa=[
+  ['1101','Kas & Bank','asset','debit'],['1102','Piutang Usaha','asset','debit'],['1103','Persediaan','asset','debit'],
+  ['2101','Hutang Usaha','liability','credit'],['3101','Modal & Saldo Laba','equity','credit'],
+  ['4101','Penjualan','revenue','credit'],['5101','Harga Pokok Penjualan','cogs','debit'],['6101','Beban Operasional','expense','debit']
+ ];
+ for(const a of coa) await c.query(`INSERT INTO chart_accounts(tenant_id,code,name,category,normal_balance) VALUES($1,$2,$3,$4,$5) ON CONFLICT(tenant_id,code) DO UPDATE SET name=EXCLUDED.name,category=EXCLUDED.category,normal_balance=EXCLUDED.normal_balance`,[ids.tenant,...a]);
+
  await c.query('COMMIT');
  console.log('Seed demo SaaS selesai. Login: admin / admin123');
 }catch(e){await c.query('ROLLBACK');throw e}finally{c.release();await pool.end()}

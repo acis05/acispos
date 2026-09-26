@@ -1,113 +1,66 @@
-# ACIS POS v2.1 SaaS Business & Reporting Update
+# ACIS POS v2.2 — SaaS Business Edition
 
-**Solusi Kasir Cerdas untuk Bisnis Bertumbuh**
+**Tagline:** Solusi Kasir Cerdas untuk Bisnis Bertumbuh.
 
-ACIS POS v2.1 melanjutkan fondasi SaaS **PostgreSQL**, **multi-tenant**, dan **multi-outlet** dengan penyempurnaan kasir, master data, pengaturan struk, pusat laporan, dan fondasi integrasi Accurate Online.
+Versi 2.2 mempertahankan PostgreSQL multi-tenant dan memperbarui pengalaman customer serta kontrol internal ACIS.
 
-## Yang sudah tersedia
+## Update utama v2.2
 
-- PostgreSQL sebagai database utama.
-- `tenant_id` pada seluruh data bisnis penting.
-- Stok dan transaksi per outlet dengan `outlet_id`.
-- Login tenant-aware dan outlet-aware.
-- Owner/user dapat terhubung ke tenant melalui `tenant_users`.
-- Role & permission foundation.
-- Paket `STARTER`, `BUSINESS`, dan `PRO`.
-- Trial otomatis 14 hari (dapat diubah lewat `DEFAULT_TRIAL_DAYS`).
-- Subscription guard untuk operasi yang mengubah data.
-- Batas jumlah user mengikuti paket.
-- Onboarding tenant baru melalui API.
-- Platform Admin untuk melihat tenant, user, outlet, MRR, dan suspend/aktifkan tenant.
-- Audit log tenant-aware.
-- Edit/hapus penjualan, pembelian, dan biaya tetap tersedia.
-- Penghapusan transaksi membalik mutasi stok secara aman.
-- Migration dan seed otomatis saat Railway start.
-- Dokumen pola PostgreSQL RLS di `docs/RLS.md`.
-
-
-## Update v2.1
-
-- Foto produk dapat diunggah dari menu Produk dan tampil pada kartu item Kasir (POS). Untuk MVP foto disimpan sebagai data URI di PostgreSQL; untuk produksi skala besar disarankan pindah ke object storage/CDN.
-- Tombol **Edit** dan **Hapus** tersedia pada Produk, Pelanggan, dan Supplier. Penghapusan produk menggunakan soft-delete agar histori transaksi tetap aman.
-- Tab **Struk** di Pengaturan sudah aktif: header, footer, lebar kertas 58/80 mm, tampilkan logo, dan preview struk.
-- Pusat laporan baru: Penjualan per Barang, Metode Bayar, Shift (ringkasan tanggal+kasir), Pelanggan, Pembelian per Barang, Pemasok, Hutang, Piutang, Penerimaan Uang per Metode Bayar, Buku Besar, Laba Rugi, dan Neraca.
-- Buku Besar dan Neraca pada v2.1 adalah **laporan manajerial/estimasi** yang diturunkan dari transaksi POS, pembelian, biaya, saldo stok, hutang, dan piutang. Untuk akuntansi formal penuh, tahap berikutnya adalah jurnal double-entry otomatis dan Chart of Accounts.
-- Menu **Integrasi Accurate Online** ditambahkan. Konfigurasi tenant, pilihan objek sinkron, dan tabel penyimpanan integrasi sudah tersedia. OAuth dan sinkronisasi API penuh perlu kredensial aplikasi Accurate Online yang resmi sebelum diaktifkan ke produksi. Accurate Online menggunakan OAuth 2.0 untuk aplikasi komersial.
-
-## Struktur SaaS
-
-```text
-ACIS POS App
-├─ Tenant A
-│  ├─ Outlet A1
-│  └─ Outlet A2
-├─ Tenant B
-│  └─ Outlet B1
-└─ Platform Admin
-
-PostgreSQL
-├─ tenants / outlets
-├─ users / tenant_users / roles
-├─ subscription_plans / subscriptions
-├─ products / stock_balances / stock_ledger
-├─ sales / sale_items
-├─ purchases / purchase_items
-├─ partners / expenses
-└─ audit_logs
-```
+- **Integrasi Accurate Online satu arah**: customer hanya melihat tombol **Hubungkan ke Accurate Online**, memilih Data Usaha, lalu **Kirim Data Sekarang**. Client ID/Client Secret tidak pernah ditampilkan di halaman customer. Data yang dikirim adalah Faktur Penjualan dan Penerimaan Penjualan yang belum pernah tersinkron.
+- **Laporan keuangan profesional**: Buku Besar, Laba Rugi bertingkat, dan Laporan Posisi Keuangan/Neraca dengan pengelompokan aset, liabilitas dan ekuitas. Struktur penyajian dibuat bergaya laporan keuangan PSAK; penerapan PSAK penuh tetap bergantung pada kebijakan akuntansi, COA, saldo awal, penyesuaian, pajak dan closing perusahaan.
+- **Semua laporan dapat diekspor ke Excel (.xlsx) dan PDF.**
+- **Shift Kasir**: buka shift, modal awal, transaksi/penjualan per shift, kas tunai, tutup shift dan kas fisik akhir.
+- **Menu Langganan customer disederhanakan**; tidak ada lagi penjelasan arsitektur SaaS.
+- **Platform Admin dipisahkan dari POS**. Buka `/admin` untuk mengelola customer, paket, periode aktif, suspend/aktifkan tenant, user aktif, dan reset password.
+- Paket yang tersedia: **Bulanan Rp100.000/bulan** dan **Tahunan Rp1.000.000/tahun**.
 
 ## Deploy Railway
 
-1. Upload isi folder repository ini ke GitHub.
-2. Buat project Railway dari GitHub repo.
-3. Tambahkan service **PostgreSQL** di project Railway.
-4. Railway biasanya menyediakan `DATABASE_URL` ke service aplikasi melalui variable reference. Pastikan variable tersebut tersedia di service ACIS POS.
-5. Tambahkan `JWT_SECRET` yang panjang dan acak.
-6. Opsional: `DEFAULT_TRIAL_DAYS=14` dan `DATABASE_SSL=false` untuk koneksi private Railway.
-7. Deploy. Start command akan menjalankan `npm run migrate`, `npm run seed`, lalu server.
+1. Push folder ini ke GitHub.
+2. Buat project Railway dan tambahkan PostgreSQL.
+3. Hubungkan repository GitHub ke service aplikasi.
+4. Pastikan `DATABASE_URL` tersedia pada service aplikasi.
+5. Set `JWT_SECRET` dengan string acak minimal 32 karakter.
+6. Untuk Accurate Online, isi variabel `ACCURATE_CLIENT_ID`, `ACCURATE_CLIENT_SECRET`, `ACCURATE_REDIRECT_URI`, dan scope sesuai aplikasi ACIS yang terdaftar pada Area Developer Accurate.
+7. Deploy. Start command otomatis menjalankan migration, seed, lalu server.
 
-`railway.json` sudah memakai `/api/health` sebagai healthcheck.
+## Accurate Online
 
-## Demo awal
+OAuth Accurate menggunakan authorization-code flow. Callback default aplikasi adalah:
+
+`/api/integrations/accurate/oauth/callback`
+
+Set callback URL penuh tersebut pada Area Developer Accurate, misalnya:
+
+`https://acis-pos-production.up.railway.app/api/integrations/accurate/oauth/callback`
+
+Setelah otorisasi, customer memilih Data Usaha Accurate yang akan menerima transaksi. ACIS POS kemudian membuka database tersebut dan menyimpan session/host server-side.
+
+Tombol **Kirim Data Sekarang** mengirim maksimal 100 transaksi penjualan yang belum tersinkron pada sekali proses. Sinkronisasi diberi jeda agar tidak agresif terhadap rate limit API Accurate. Status per transaksi dicatat di `accurate_sync_logs` dan transaksi sukses diberi `accurate_synced_at` supaya tidak dikirim dua kali.
+
+> Catatan implementasi: dokumentasi endpoint dan parameter API Accurate dapat berubah/berbeda sesuai scope aplikasi. Default adapter memakai `sales-invoice/save.do` dan `sales-receipt/save.do`, dengan path yang dapat dioverride melalui environment variable tanpa mengekspos konfigurasi teknis ke customer. Sebelum produksi, cocokkan field payload dengan API Docs pada Area Developer Accurate milik ACIS.
+
+## Admin ACIS
+
+Halaman internal tersedia pada:
+
+`/admin`
+
+Akun demo seed:
 
 - Username: `admin`
 - Password: `admin123`
 
-Akun seed ini juga memiliki flag Platform Admin agar menu **Platform Admin** dapat diuji. Ganti password setelah deploy produksi.
+Ganti password untuk produksi. Admin ACIS dapat:
 
-## Onboarding tenant baru
+- melihat seluruh customer/tenant;
+- memilih Paket Bulanan atau Tahunan;
+- mengatur tanggal mulai dan berakhir langganan;
+- mengaktifkan atau suspend customer;
+- melihat jumlah user aktif;
+- aktif/nonaktifkan user customer;
+- reset password administrator customer.
 
-Endpoint publik foundation:
+## Catatan akuntansi
 
-```http
-POST /api/onboarding/register
-Content-Type: application/json
-```
-
-Contoh body:
-
-```json
-{
-  "businessName": "Toko Maju Jaya",
-  "outletName": "Cabang Utama",
-  "name": "Owner Toko",
-  "username": "owner.majujaya",
-  "password": "password-kuat",
-  "email": "owner@example.com",
-  "planCode": "STARTER"
-}
-```
-
-Endpoint membuat tenant, outlet utama, owner Administrator, role default, master kategori/satuan, pelanggan/supplier default, dan subscription trial.
-
-## Catatan keamanan penting
-
-- `tenant_id` tidak diambil dari query string/body browser untuk scoping data. Tenant aktif berasal dari JWT yang dibuat server.
-- Semua SKU unik di dalam satu tenant (`UNIQUE(tenant_id, sku)`), bukan global.
-- Semua query transaksi menggunakan `tenant_id`, dan transaksi stok juga menggunakan `outlet_id`.
-- Untuk hardening berikutnya, aktifkan PostgreSQL RLS menggunakan pola di `docs/RLS.md` dan gunakan role database aplikasi khusus.
-- Tambahkan rate limiting, CSRF strategy bila beralih ke cookie auth, email verification, reset password, MFA untuk platform admin, dan secret rotation sebelum go-live skala besar.
-
-## Billing berikutnya
-
-Tabel subscription sudah siap untuk dihubungkan ke payment gateway. Tahap lanjutan yang disarankan: invoice SaaS, webhook pembayaran, grace period otomatis, notifikasi jatuh tempo, serta upgrade/downgrade paket.
+ACIS POS menyediakan struktur COA dasar dan laporan keuangan operasional. Untuk implementasi akuntansi PSAK penuh, lanjutkan dengan saldo awal, jurnal penyesuaian, kas/bank terpisah, pembayaran hutang/piutang, pajak, periode akuntansi, closing, aset tetap, dan rekonsiliasi.

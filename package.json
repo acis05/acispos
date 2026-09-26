@@ -1,8 +1,8 @@
 {
   "name": "acis-pos-saas",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "private": true,
-  "description": "ACIS POS SaaS v2.1 - PostgreSQL multi-tenant POS with product photos, reporting center, receipt settings and Accurate Online integration foundation",
+  "description": "ACIS POS SaaS v2.2 - multi-tenant POS with cashier shifts, PSAK-style financial reports, Excel/PDF export and one-way Accurate Online OAuth sync",
   "type": "module",
   "scripts": {
     "migrate": "node scripts/migrate.js",
@@ -18,6 +18,8 @@
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",
     "pg": "^8.13.1",
-    "express-async-errors": "^3.1.1"
+    "express-async-errors": "^3.1.1",
+    "exceljs": "^4.4.0",
+    "pdfkit": "^0.16.0"
   }
 }

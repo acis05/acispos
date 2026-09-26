@@ -272,3 +272,81 @@ CREATE TABLE IF NOT EXISTS integrations (
   updated_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE(tenant_id, provider)
 );
+
+-- v2.2 additions: cashier shifts, accounting foundation, export/sync tracking
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS shift_id uuid;
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS accurate_invoice_id varchar(120);
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS accurate_receipt_id varchar(120);
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS accurate_synced_at timestamptz;
+
+CREATE TABLE IF NOT EXISTS cashier_shifts (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  outlet_id uuid NOT NULL REFERENCES outlets(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  opened_at timestamptz NOT NULL DEFAULT now(),
+  closed_at timestamptz,
+  opening_cash numeric(15,2) NOT NULL DEFAULT 0,
+  closing_cash numeric(15,2),
+  notes text NOT NULL DEFAULT '',
+  status varchar(20) NOT NULL DEFAULT 'open' CHECK(status IN ('open','closed'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_one_open_shift_per_user_outlet ON cashier_shifts(tenant_id,outlet_id,user_id) WHERE status='open';
+CREATE INDEX IF NOT EXISTS idx_shifts_tenant_outlet_date ON cashier_shifts(tenant_id,outlet_id,opened_at DESC);
+
+CREATE TABLE IF NOT EXISTS chart_accounts (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  code varchar(30) NOT NULL,
+  name varchar(160) NOT NULL,
+  category varchar(30) NOT NULL CHECK(category IN ('asset','liability','equity','revenue','cogs','expense')),
+  normal_balance varchar(10) NOT NULL CHECK(normal_balance IN ('debit','credit')),
+  active boolean NOT NULL DEFAULT true,
+  UNIQUE(tenant_id,code)
+);
+
+CREATE TABLE IF NOT EXISTS journal_entries (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  outlet_id uuid REFERENCES outlets(id) ON DELETE SET NULL,
+  entry_date date NOT NULL DEFAULT current_date,
+  reference varchar(120) NOT NULL,
+  description text NOT NULL DEFAULT '',
+  source_type varchar(40) NOT NULL DEFAULT 'manual',
+  source_id uuid,
+  posted_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(tenant_id,source_type,source_id)
+);
+CREATE TABLE IF NOT EXISTS journal_lines (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  journal_id uuid NOT NULL REFERENCES journal_entries(id) ON DELETE CASCADE,
+  account_id uuid NOT NULL REFERENCES chart_accounts(id),
+  debit numeric(15,2) NOT NULL DEFAULT 0,
+  credit numeric(15,2) NOT NULL DEFAULT 0,
+  memo text NOT NULL DEFAULT '',
+  CHECK (debit >= 0 AND credit >= 0),
+  CHECK (NOT (debit > 0 AND credit > 0))
+);
+CREATE INDEX IF NOT EXISTS idx_journal_tenant_date ON journal_entries(tenant_id,entry_date,posted_at);
+
+CREATE TABLE IF NOT EXISTS accurate_sync_logs (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  outlet_id uuid REFERENCES outlets(id) ON DELETE SET NULL,
+  sale_id uuid REFERENCES sales(id) ON DELETE SET NULL,
+  entity varchar(40) NOT NULL,
+  local_reference varchar(120) NOT NULL DEFAULT '',
+  remote_id varchar(120) NOT NULL DEFAULT '',
+  status varchar(30) NOT NULL,
+  message text NOT NULL DEFAULT '',
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE integrations ADD COLUMN IF NOT EXISTS access_token text;
+ALTER TABLE integrations ADD COLUMN IF NOT EXISTS refresh_token text;
+ALTER TABLE integrations ADD COLUMN IF NOT EXISTS token_expires_at timestamptz;
+ALTER TABLE integrations ADD COLUMN IF NOT EXISTS remote_database_id varchar(80);
+ALTER TABLE integrations ADD COLUMN IF NOT EXISTS remote_database_alias varchar(180);
+ALTER TABLE integrations ADD COLUMN IF NOT EXISTS remote_host text;
+ALTER TABLE integrations ADD COLUMN IF NOT EXISTS remote_session_id text;

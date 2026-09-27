@@ -350,3 +350,150 @@ ALTER TABLE integrations ADD COLUMN IF NOT EXISTS remote_database_id varchar(80)
 ALTER TABLE integrations ADD COLUMN IF NOT EXISTS remote_database_alias varchar(180);
 ALTER TABLE integrations ADD COLUMN IF NOT EXISTS remote_host text;
 ALTER TABLE integrations ADD COLUMN IF NOT EXISTS remote_session_id text;
+
+
+-- v2.4 additions: promotions, loyalty, split payment, returns, receivable/payable, offline sync
+CREATE TABLE IF NOT EXISTS promotions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  name varchar(160) NOT NULL,
+  code varchar(60),
+  type varchar(30) NOT NULL CHECK(type IN ('percent','fixed')),
+  value numeric(15,2) NOT NULL DEFAULT 0,
+  min_purchase numeric(15,2) NOT NULL DEFAULT 0,
+  starts_at timestamptz,
+  ends_at timestamptz,
+  member_only boolean NOT NULL DEFAULT false,
+  active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_promotions_tenant_code ON promotions(tenant_id, upper(code)) WHERE code IS NOT NULL AND code <> '';
+
+CREATE TABLE IF NOT EXISTS loyalty_settings (
+  tenant_id uuid PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+  enabled boolean NOT NULL DEFAULT true,
+  rupiah_per_point numeric(15,2) NOT NULL DEFAULT 10000,
+  point_value numeric(15,2) NOT NULL DEFAULT 1000,
+  min_redeem_points integer NOT NULL DEFAULT 1,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS loyalty_transactions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  customer_id uuid NOT NULL REFERENCES partners(id) ON DELETE CASCADE,
+  sale_id uuid REFERENCES sales(id) ON DELETE SET NULL,
+  at timestamptz NOT NULL DEFAULT now(),
+  type varchar(20) NOT NULL CHECK(type IN ('earn','redeem','adjust','reversal')),
+  points integer NOT NULL,
+  note text NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_loyalty_tenant_customer ON loyalty_transactions(tenant_id,customer_id,at DESC);
+
+CREATE TABLE IF NOT EXISTS sale_payments (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  sale_id uuid NOT NULL REFERENCES sales(id) ON DELETE CASCADE,
+  method varchar(40) NOT NULL,
+  amount numeric(15,2) NOT NULL DEFAULT 0,
+  reference varchar(120) NOT NULL DEFAULT '',
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_sale_payments_sale ON sale_payments(tenant_id,sale_id);
+
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS points_redeemed integer NOT NULL DEFAULT 0;
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS promo_discount numeric(15,2) NOT NULL DEFAULT 0;
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS promo_code varchar(60) NOT NULL DEFAULT '';
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS due_date date;
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS client_ref varchar(120);
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS void_reason text NOT NULL DEFAULT '';
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS voided_at timestamptz;
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS voided_by uuid;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sales_tenant_client_ref ON sales(tenant_id,client_ref) WHERE client_ref IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS sale_returns (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  outlet_id uuid NOT NULL REFERENCES outlets(id) ON DELETE CASCADE,
+  sale_id uuid NOT NULL REFERENCES sales(id) ON DELETE RESTRICT,
+  number varchar(100) NOT NULL,
+  type varchar(20) NOT NULL DEFAULT 'return' CHECK(type IN ('return','void')),
+  reason text NOT NULL,
+  refund_method varchar(40) NOT NULL DEFAULT 'cash',
+  refund_amount numeric(15,2) NOT NULL DEFAULT 0,
+  created_by uuid REFERENCES users(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(tenant_id,number)
+);
+CREATE TABLE IF NOT EXISTS sale_return_items (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  return_id uuid NOT NULL REFERENCES sale_returns(id) ON DELETE CASCADE,
+  sale_item_id uuid NOT NULL REFERENCES sale_items(id) ON DELETE RESTRICT,
+  product_id uuid REFERENCES products(id) ON DELETE SET NULL,
+  name varchar(180) NOT NULL,
+  qty numeric(15,3) NOT NULL,
+  price numeric(15,2) NOT NULL,
+  amount numeric(15,2) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS receivables (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  outlet_id uuid NOT NULL REFERENCES outlets(id) ON DELETE CASCADE,
+  customer_id uuid NOT NULL REFERENCES partners(id) ON DELETE RESTRICT,
+  sale_id uuid REFERENCES sales(id) ON DELETE SET NULL,
+  number varchar(100) NOT NULL,
+  original_amount numeric(15,2) NOT NULL,
+  paid_amount numeric(15,2) NOT NULL DEFAULT 0,
+  due_date date,
+  status varchar(20) NOT NULL DEFAULT 'open' CHECK(status IN ('open','paid','cancelled')),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(tenant_id,number)
+);
+CREATE TABLE IF NOT EXISTS receivable_payments (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  receivable_id uuid NOT NULL REFERENCES receivables(id) ON DELETE CASCADE,
+  amount numeric(15,2) NOT NULL,
+  method varchar(40) NOT NULL DEFAULT 'cash',
+  reference varchar(120) NOT NULL DEFAULT '',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  user_id uuid REFERENCES users(id) ON DELETE SET NULL
+);
+
+ALTER TABLE purchases ADD COLUMN IF NOT EXISTS paid_amount numeric(15,2) NOT NULL DEFAULT 0;
+ALTER TABLE purchases ADD COLUMN IF NOT EXISTS due_date date;
+
+CREATE TABLE IF NOT EXISTS payables (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  outlet_id uuid NOT NULL REFERENCES outlets(id) ON DELETE CASCADE,
+  supplier_id uuid NOT NULL REFERENCES partners(id) ON DELETE RESTRICT,
+  purchase_id uuid REFERENCES purchases(id) ON DELETE SET NULL,
+  number varchar(100) NOT NULL,
+  original_amount numeric(15,2) NOT NULL,
+  paid_amount numeric(15,2) NOT NULL DEFAULT 0,
+  due_date date,
+  status varchar(20) NOT NULL DEFAULT 'open' CHECK(status IN ('open','paid','cancelled')),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(tenant_id,number)
+);
+CREATE TABLE IF NOT EXISTS payable_payments (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  payable_id uuid NOT NULL REFERENCES payables(id) ON DELETE CASCADE,
+  amount numeric(15,2) NOT NULL,
+  method varchar(40) NOT NULL DEFAULT 'cash',
+  reference varchar(120) NOT NULL DEFAULT '',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  user_id uuid REFERENCES users(id) ON DELETE SET NULL
+);
+
+ALTER TABLE tenant_settings ADD COLUMN IF NOT EXISTS receipt_auto_print boolean NOT NULL DEFAULT true;
+ALTER TABLE tenant_settings ADD COLUMN IF NOT EXISTS barcode_label_width integer NOT NULL DEFAULT 50;
+
+INSERT INTO loyalty_settings(tenant_id)
+SELECT id FROM tenants
+ON CONFLICT(tenant_id) DO NOTHING;

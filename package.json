@@ -1,8 +1,8 @@
 {
   "name": "acis-pos-saas",
-  "version": "2.3.1",
+  "version": "2.4.1",
   "private": true,
-  "description": "ACIS POS SaaS v2.3.1 - multi-tenant POS with cashier shifts, PSAK-style financial reports, Excel/PDF export and one-way Accurate Online OAuth sync",
+  "description": "ACIS POS SaaS v2.4.1 - Retail Pro with admin password self-service",
   "type": "module",
   "scripts": {
     "migrate": "node scripts/migrate.js",

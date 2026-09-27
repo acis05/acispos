@@ -31,8 +31,8 @@ const n=v=>Number(v||0), now=()=>new Date().toISOString();
 const code=(prefix)=>`${prefix}-${new Date().toISOString().slice(0,10).replaceAll('-','')}-${Math.random().toString(36).slice(2,7).toUpperCase()}`;
 const camelProduct=r=>({id:r.id,sku:r.sku,barcode:r.barcode,name:r.name,categoryId:r.category_id,unitId:r.unit_id,cost:n(r.cost),price:n(r.price),stock:n(r.stock),minStock:n(r.min_stock),active:r.active,imageData:r.image_data||''});
 const camelPartner=r=>({id:r.id,code:r.code,type:r.type,name:r.name,phone:r.phone,email:r.email,address:r.address,points:n(r.points)});
-const camelSale=r=>({id:r.id,invoice:r.invoice,createdAt:r.created_at,cashier:r.cashier_name,customerId:r.customer_id||'',paymentMethod:r.payment_method,subtotal:n(r.subtotal),discount:n(r.discount),total:n(r.total),paid:n(r.paid),costTotal:n(r.cost_total),pointsEarned:n(r.points_earned),status:r.status,items:r.items||[]});
-const camelPurchase=r=>({id:r.id,number:r.number,supplierId:r.supplier_id||'',createdAt:r.created_at,total:n(r.total),status:r.status,note:r.note,items:r.items||[]});
+const camelSale=r=>({id:r.id,invoice:r.invoice,createdAt:r.created_at,cashier:r.cashier_name,customerId:r.customer_id||'',paymentMethod:r.payment_method,subtotal:n(r.subtotal),discount:n(r.discount),promoDiscount:n(r.promo_discount),promoCode:r.promo_code||'',total:n(r.total),paid:n(r.paid),costTotal:n(r.cost_total),pointsEarned:n(r.points_earned),pointsRedeemed:n(r.points_redeemed),dueDate:r.due_date||null,status:r.status,voidReason:r.void_reason||'',voidedAt:r.voided_at||null,items:r.items||[]});
+const camelPurchase=r=>({id:r.id,number:r.number,supplierId:r.supplier_id||'',createdAt:r.created_at,total:n(r.total),paidAmount:n(r.paid_amount),dueDate:r.due_date||null,status:r.status,note:r.note,items:r.items||[]});
 
 async function audit(ctx,action,entity,detail=''){
   await pool.query(`INSERT INTO audit_logs(tenant_id,outlet_id,user_id,username,action,entity,detail) VALUES($1,$2,$3,$4,$5,$6,$7)`,[ctx?.tenantId||null,ctx?.outletId||null,ctx?.user?.id||null,ctx?.user?.username||'system',action,entity,String(detail||'')]);
@@ -65,7 +65,7 @@ async function accurateRefreshIfNeeded(tenantId,row){if(!row?.access_token)retur
 function activeSubscription(req,res,next){const s=req.ctx.subscription;if(!s)return res.status(402).json({error:'Langganan belum aktif.'});const deadline=new Date(s.grace_until||s.expires_at);if(['cancelled','suspended'].includes(s.status)||deadline<new Date())return res.status(402).json({error:'Langganan ACIS POS telah berakhir. Silakan perpanjang untuk melanjutkan transaksi.'});next()}
 const safeUser=(u,ctx)=>({id:u.id,name:u.name,username:u.username,email:u.email||'',role:ctx.role,active:u.active,createdAt:u.created_at,tenant:{id:ctx.tenantId,name:ctx.tenantName},outlet:{id:ctx.outletId,name:ctx.outletName},subscription:ctx.subscription});
 
-app.get('/api/health',async(req,res)=>{try{await pool.query('SELECT 1');res.json({status:'ok',app:APP_NAME,version:'2.3.1',database:'postgresql',multiTenant:true,time:now()})}catch(e){res.status(503).json({status:'error',database:'unavailable'})}});
+app.get('/api/health',async(req,res)=>{try{await pool.query('SELECT 1');res.json({status:'ok',app:APP_NAME,version:'2.4.0',database:'postgresql',multiTenant:true,time:now()})}catch(e){res.status(503).json({status:'error',database:'unavailable'})}});
 
 app.post('/api/login',async(req,res)=>{
   const {username,password,tenantId,outletId}=req.body||{};
@@ -84,6 +84,7 @@ app.post('/api/login',async(req,res)=>{
 
 app.post('/api/admin/login',async(req,res)=>{const {username,password}=req.body||{};const u=(await pool.query(`SELECT * FROM users WHERE username=$1 AND active=true AND is_platform_admin=true`,[String(username||'')])).rows[0];if(!u||!await bcrypt.compare(String(password||''),u.password_hash))return res.status(401).json({error:'Login admin ACIS tidak valid.'});const token=jwt.sign({sub:u.id,platform:true},JWT_SECRET,{expiresIn:'8h'});res.json({token,user:{id:u.id,name:u.name,username:u.username}})});
 app.get('/api/admin/me',platformAuth,async(req,res)=>{const u=(await pool.query(`SELECT id,name,username,email FROM users WHERE id=$1 AND is_platform_admin=true`,[req.platform.userId])).rows[0];if(!u)return res.status(401).json({error:'Admin tidak ditemukan.'});res.json({user:u})});
+app.post('/api/admin/change-password',platformAuth,async(req,res)=>{try{const {currentPassword,newPassword,confirmPassword}=req.body||{};if(!currentPassword||!newPassword||!confirmPassword)return res.status(400).json({error:'Lengkapi password lama, password baru, dan konfirmasi password.'});if(String(newPassword).length<10)return res.status(400).json({error:'Password baru minimal 10 karakter.'});if(String(newPassword)!==String(confirmPassword))return res.status(400).json({error:'Konfirmasi password baru tidak sama.'});if(String(currentPassword)===String(newPassword))return res.status(400).json({error:'Password baru harus berbeda dari password lama.'});const u=(await pool.query(`SELECT id,password_hash FROM users WHERE id=$1 AND active=true AND is_platform_admin=true`,[req.platform.userId])).rows[0];if(!u)return res.status(404).json({error:'Admin tidak ditemukan.'});const ok=await bcrypt.compare(String(currentPassword),u.password_hash);if(!ok)return res.status(400).json({error:'Password lama tidak sesuai.'});const hash=await bcrypt.hash(String(newPassword),12);await pool.query(`UPDATE users SET password_hash=$2 WHERE id=$1`,[u.id,hash]);res.json({ok:true,message:'Password admin berhasil diubah.'})}catch(e){console.error('change admin password',e);res.status(500).json({error:'Gagal mengubah password admin.'})}});
 
 app.post('/api/onboarding/register',async(req,res)=>{
   const b=req.body||{}; if(!b.businessName||!b.name||!b.username||!b.password)return res.status(400).json({error:'Nama bisnis, nama owner, username dan password wajib diisi.'});
@@ -162,26 +163,33 @@ app.put('/api/expenses/:id',auth,activeSubscription,async(req,res)=>{const r=(aw
 app.delete('/api/expenses/:id',auth,activeSubscription,async(req,res)=>{const r=(await pool.query(`DELETE FROM expenses WHERE id=$1 AND tenant_id=$2 RETURNING description`,[req.params.id,req.ctx.tenantId])).rows[0];if(!r)return res.status(404).json({error:'Biaya tidak ditemukan.'});await audit(req.ctx,'DELETE','expense',r.description);res.json({ok:true})});
 
 app.get('/api/dashboard',auth,async(req,res)=>{const t=req.ctx.tenantId,o=req.ctx.outletId;const [stats,low,recent,daily,topMonth]=await Promise.all([
- pool.query(`SELECT COALESCE(SUM(total) FILTER(WHERE created_at::date=current_date),0) total_today,COUNT(*) FILTER(WHERE created_at::date=current_date) transactions_today,COALESCE(SUM(total) FILTER(WHERE date_trunc('month',created_at)=date_trunc('month',now())),0) total_month FROM sales WHERE tenant_id=$1 AND outlet_id=$2`,[t,o]),
+ pool.query(`SELECT COALESCE(SUM(total) FILTER(WHERE created_at::date=current_date),0) total_today,COUNT(*) FILTER(WHERE created_at::date=current_date) transactions_today,COALESCE(SUM(total) FILTER(WHERE date_trunc('month',created_at)=date_trunc('month',now())),0) total_month FROM sales WHERE tenant_id=$1 AND outlet_id=$2 AND status<>'void'`,[t,o]),
  pool.query(`SELECT p.*,COALESCE(sb.quantity,0) stock FROM products p LEFT JOIN stock_balances sb ON sb.product_id=p.id AND sb.tenant_id=p.tenant_id AND sb.outlet_id=$2 WHERE p.tenant_id=$1 AND p.active=true AND COALESCE(sb.quantity,0)<=p.min_stock ORDER BY stock ASC LIMIT 50`,[t,o]),
- pool.query(`SELECT * FROM sales WHERE tenant_id=$1 AND outlet_id=$2 ORDER BY created_at DESC LIMIT 8`,[t,o]),
- pool.query(`SELECT d::date date,COALESCE(SUM(s.total),0) total FROM generate_series(current_date-6,current_date,'1 day') d LEFT JOIN sales s ON s.tenant_id=$1 AND s.outlet_id=$2 AND s.created_at::date=d::date GROUP BY d ORDER BY d`,[t,o]),
- pool.query(`SELECT si.name produk,SUM(si.qty)::numeric qty,SUM(si.subtotal)::numeric omzet FROM sale_items si JOIN sales s ON s.id=si.sale_id AND s.tenant_id=si.tenant_id WHERE s.tenant_id=$1 AND s.outlet_id=$2 AND date_trunc('month',s.created_at)=date_trunc('month',now()) GROUP BY si.name ORDER BY qty DESC,omzet DESC LIMIT 8`,[t,o])]);
+ pool.query(`SELECT * FROM sales WHERE tenant_id=$1 AND outlet_id=$2 AND status<>'void' ORDER BY created_at DESC LIMIT 8`,[t,o]),
+ pool.query(`SELECT d::date date,COALESCE(SUM(s.total),0) total FROM generate_series(current_date-6,current_date,'1 day') d LEFT JOIN sales s ON s.tenant_id=$1 AND s.outlet_id=$2 AND s.created_at::date=d::date AND s.status<>'void' GROUP BY d ORDER BY d`,[t,o]),
+ pool.query(`SELECT si.name produk,SUM(si.qty)::numeric qty,SUM(si.subtotal)::numeric omzet FROM sale_items si JOIN sales s ON s.id=si.sale_id AND s.tenant_id=si.tenant_id WHERE s.tenant_id=$1 AND s.outlet_id=$2 AND date_trunc('month',s.created_at)=date_trunc('month',now()) AND s.status<>'void' GROUP BY si.name ORDER BY qty DESC,omzet DESC LIMIT 8`,[t,o])]);
  const productCount=n((await pool.query(`SELECT COUNT(*) c FROM products WHERE tenant_id=$1 AND active=true`,[t])).rows[0].c);const st=stats.rows[0];res.json({totalToday:n(st.total_today),transactionsToday:n(st.transactions_today),totalMonth:n(st.total_month),products:productCount,lowStock:low.rows.map(camelProduct),recent:recent.rows.map(camelSale),daily:daily.rows.map(x=>({date:x.date,total:n(x.total)})),topProductsMonth:topMonth.rows.map(x=>({name:x.produk,qty:n(x.qty),revenue:n(x.omzet)}))})});
 
-app.get('/api/reports/summary',auth,async(req,res)=>{const from=String(req.query.from||'1900-01-01'),to=String(req.query.to||'2999-12-31'),t=req.ctx.tenantId,o=req.ctx.outletId;const sales=(await pool.query(`SELECT s.*,COALESCE(json_agg(json_build_object('productId',si.product_id,'name',si.name,'qty',si.qty,'subtotal',si.subtotal)) FILTER(WHERE si.id IS NOT NULL),'[]') items FROM sales s LEFT JOIN sale_items si ON si.sale_id=s.id AND si.tenant_id=s.tenant_id WHERE s.tenant_id=$1 AND s.outlet_id=$2 AND s.created_at::date BETWEEN $3::date AND $4::date GROUP BY s.id ORDER BY s.created_at DESC`,[t,o,from,to])).rows.map(camelSale);const expenses=(await pool.query(`SELECT amount FROM expenses WHERE tenant_id=$1 AND (outlet_id=$2 OR outlet_id IS NULL) AND created_at::date BETWEEN $3::date AND $4::date`,[t,o,from,to])).rows;const revenue=sales.reduce((a,b)=>a+b.total,0),cogs=sales.reduce((a,b)=>a+b.costTotal,0),expense=expenses.reduce((a,b)=>a+n(b.amount),0),byProduct={};for(const s of sales)for(const i of s.items){byProduct[i.productId]??={name:i.name,qty:0,revenue:0};byProduct[i.productId].qty+=n(i.qty);byProduct[i.productId].revenue+=n(i.subtotal)}res.json({revenue,cogs,grossProfit:revenue-cogs,expenses:expense,netProfit:revenue-cogs-expense,transactions:sales.length,topProducts:Object.values(byProduct).sort((a,b)=>b.qty-a.qty).slice(0,10),sales})});
+app.get('/api/reports/summary',auth,async(req,res)=>{const from=String(req.query.from||'1900-01-01'),to=String(req.query.to||'2999-12-31'),t=req.ctx.tenantId,o=req.ctx.outletId;const sales=(await pool.query(`SELECT s.*,COALESCE(json_agg(json_build_object('productId',si.product_id,'name',si.name,'qty',si.qty,'subtotal',si.subtotal)) FILTER(WHERE si.id IS NOT NULL),'[]') items FROM sales s LEFT JOIN sale_items si ON si.sale_id=s.id AND si.tenant_id=s.tenant_id WHERE s.tenant_id=$1 AND s.outlet_id=$2 AND s.created_at::date BETWEEN $3::date AND $4::date AND s.status<>'void' GROUP BY s.id ORDER BY s.created_at DESC`,[t,o,from,to])).rows.map(camelSale);const expenses=(await pool.query(`SELECT amount FROM expenses WHERE tenant_id=$1 AND (outlet_id=$2 OR outlet_id IS NULL) AND created_at::date BETWEEN $3::date AND $4::date`,[t,o,from,to])).rows;const revenue=sales.reduce((a,b)=>a+b.total,0),cogs=sales.reduce((a,b)=>a+b.costTotal,0),expense=expenses.reduce((a,b)=>a+n(b.amount),0),byProduct={};for(const s of sales)for(const i of s.items){byProduct[i.productId]??={name:i.name,qty:0,revenue:0};byProduct[i.productId].qty+=n(i.qty);byProduct[i.productId].revenue+=n(i.subtotal)}res.json({revenue,cogs,grossProfit:revenue-cogs,expenses:expense,netProfit:revenue-cogs-expense,transactions:sales.length,topProducts:Object.values(byProduct).sort((a,b)=>b.qty-a.qty).slice(0,10),sales})});
 
 async function buildReportData(ctx,type,from,to){
  const t=ctx.tenantId,o=ctx.outletId;let rows=[],title='Laporan',note='',statement=null;
  if(type==='sales_item'){title='Penjualan per Barang';rows=(await pool.query(`SELECT si.sku,si.name produk,SUM(si.qty)::numeric qty,SUM(si.subtotal)::numeric omzet FROM sale_items si JOIN sales s ON s.id=si.sale_id WHERE s.tenant_id=$1 AND s.outlet_id=$2 AND s.created_at::date BETWEEN $3::date AND $4::date GROUP BY si.sku,si.name ORDER BY omzet DESC`,[t,o,from,to])).rows}
- else if(type==='sales_payment'){title='Penjualan per Metode Bayar';rows=(await pool.query(`SELECT payment_method metode,COUNT(*)::int transaksi,SUM(total)::numeric nilai_penjualan FROM sales WHERE tenant_id=$1 AND outlet_id=$2 AND created_at::date BETWEEN $3::date AND $4::date GROUP BY payment_method ORDER BY nilai_penjualan DESC`,[t,o,from,to])).rows}
+ else if(type==='sales_payment'){title='Penjualan per Metode Bayar';rows=(await pool.query(`SELECT metode,SUM(transaksi)::int transaksi,SUM(nilai_penjualan)::numeric nilai_penjualan FROM (
+SELECT sp.method metode,COUNT(DISTINCT s.id)::int transaksi,SUM(LEAST(sp.amount,s.total))::numeric nilai_penjualan FROM sale_payments sp JOIN sales s ON s.id=sp.sale_id WHERE s.tenant_id=$1 AND s.outlet_id=$2 AND s.status<>'void' AND s.created_at::date BETWEEN $3::date AND $4::date GROUP BY sp.method
+UNION ALL
+SELECT s.payment_method metode,COUNT(*)::int transaksi,SUM(s.total)::numeric nilai_penjualan FROM sales s WHERE s.tenant_id=$1 AND s.outlet_id=$2 AND s.status<>'void' AND s.created_at::date BETWEEN $3::date AND $4::date AND NOT EXISTS(SELECT 1 FROM sale_payments sp WHERE sp.sale_id=s.id) GROUP BY s.payment_method
+) z GROUP BY metode ORDER BY nilai_penjualan DESC`,[t,o,from,to])).rows}
  else if(type==='sales_shift'){title='Penjualan per Shift';rows=(await pool.query(`SELECT cs.id shift,cs.opened_at mulai,cs.closed_at selesai,u.name kasir,COUNT(s.id)::int transaksi,COALESCE(SUM(s.total),0)::numeric total,COALESCE(SUM(CASE WHEN lower(s.payment_method)='cash' THEN LEAST(s.paid,s.total) ELSE 0 END),0)::numeric tunai FROM cashier_shifts cs JOIN users u ON u.id=cs.user_id LEFT JOIN sales s ON s.shift_id=cs.id WHERE cs.tenant_id=$1 AND cs.outlet_id=$2 AND cs.opened_at::date BETWEEN $3::date AND $4::date GROUP BY cs.id,u.name ORDER BY cs.opened_at DESC`,[t,o,from,to])).rows}
  else if(type==='sales_customer'){title='Penjualan per Pelanggan';rows=(await pool.query(`SELECT COALESCE(p.name,'Pelanggan Umum') pelanggan,COUNT(*)::int transaksi,SUM(s.total)::numeric total FROM sales s LEFT JOIN partners p ON p.id=s.customer_id WHERE s.tenant_id=$1 AND s.outlet_id=$2 AND s.created_at::date BETWEEN $3::date AND $4::date GROUP BY COALESCE(p.name,'Pelanggan Umum') ORDER BY total DESC`,[t,o,from,to])).rows}
  else if(type==='purchase_item'){title='Pembelian per Barang';rows=(await pool.query(`SELECT pi.name produk,SUM(pi.qty)::numeric qty,SUM(pi.subtotal)::numeric total FROM purchase_items pi JOIN purchases p ON p.id=pi.purchase_id WHERE p.tenant_id=$1 AND p.outlet_id=$2 AND p.created_at::date BETWEEN $3::date AND $4::date GROUP BY pi.name ORDER BY total DESC`,[t,o,from,to])).rows}
  else if(type==='purchase_supplier'){title='Pembelian per Pemasok';rows=(await pool.query(`SELECT COALESCE(sp.name,'Tanpa Supplier') pemasok,COUNT(*)::int transaksi,SUM(p.total)::numeric total FROM purchases p LEFT JOIN partners sp ON sp.id=p.supplier_id WHERE p.tenant_id=$1 AND p.outlet_id=$2 AND p.created_at::date BETWEEN $3::date AND $4::date GROUP BY COALESCE(sp.name,'Tanpa Supplier') ORDER BY total DESC`,[t,o,from,to])).rows}
- else if(type==='ap'){title='Hutang Usaha';rows=(await pool.query(`SELECT p.number dokumen,COALESCE(sp.name,'Tanpa Supplier') pemasok,p.created_at::date tanggal,p.total::numeric saldo,p.status FROM purchases p LEFT JOIN partners sp ON sp.id=p.supplier_id WHERE p.tenant_id=$1 AND p.outlet_id=$2 AND p.created_at::date<=$4::date AND p.status NOT IN ('paid','cancelled') ORDER BY p.created_at DESC`,[t,o,from,to])).rows}
- else if(type==='ar'){title='Piutang Usaha';rows=(await pool.query(`SELECT s.invoice dokumen,COALESCE(c.name,'Pelanggan Umum') pelanggan,s.created_at::date tanggal,s.total::numeric total,s.paid::numeric dibayar,GREATEST(s.total-s.paid,0)::numeric saldo FROM sales s LEFT JOIN partners c ON c.id=s.customer_id WHERE s.tenant_id=$1 AND s.outlet_id=$2 AND s.created_at::date<=$4::date AND s.paid<s.total ORDER BY s.created_at DESC`,[t,o,from,to])).rows}
- else if(type==='receipts_payment'){title='Penerimaan Uang per Metode Bayar';rows=(await pool.query(`SELECT payment_method metode,COUNT(*)::int transaksi,SUM(LEAST(paid,total))::numeric penerimaan FROM sales WHERE tenant_id=$1 AND outlet_id=$2 AND created_at::date BETWEEN $3::date AND $4::date GROUP BY payment_method ORDER BY penerimaan DESC`,[t,o,from,to])).rows}
+ else if(type==='ap'){title='Hutang Usaha';rows=(await pool.query(`SELECT pbl.number dokumen,sp.name pemasok,pbl.created_at::date tanggal,pbl.due_date jatuh_tempo,pbl.original_amount::numeric total,pbl.paid_amount::numeric dibayar,(pbl.original_amount-pbl.paid_amount)::numeric saldo,pbl.status FROM payables pbl JOIN partners sp ON sp.id=pbl.supplier_id WHERE pbl.tenant_id=$1 AND pbl.outlet_id=$2 AND pbl.created_at::date<=$4::date ORDER BY (pbl.status='open') DESC,pbl.created_at DESC`,[t,o,from,to])).rows}
+ else if(type==='ar'){title='Piutang Usaha';rows=(await pool.query(`SELECT r.number dokumen,c.name pelanggan,r.created_at::date tanggal,r.due_date jatuh_tempo,r.original_amount::numeric total,r.paid_amount::numeric dibayar,(r.original_amount-r.paid_amount)::numeric saldo,r.status FROM receivables r JOIN partners c ON c.id=r.customer_id WHERE r.tenant_id=$1 AND r.outlet_id=$2 AND r.created_at::date<=$4::date ORDER BY (r.status='open') DESC,r.created_at DESC`,[t,o,from,to])).rows}
+ else if(type==='receipts_payment'){title='Penerimaan Uang per Metode Bayar';rows=(await pool.query(`SELECT metode,SUM(transaksi)::int transaksi,SUM(penerimaan)::numeric penerimaan FROM (
+SELECT sp.method metode,COUNT(DISTINCT s.id)::int transaksi,SUM(sp.amount)::numeric penerimaan FROM sale_payments sp JOIN sales s ON s.id=sp.sale_id WHERE s.tenant_id=$1 AND s.outlet_id=$2 AND s.status<>'void' AND s.created_at::date BETWEEN $3::date AND $4::date GROUP BY sp.method
+UNION ALL SELECT rp.method metode,COUNT(*)::int transaksi,SUM(rp.amount)::numeric penerimaan FROM receivable_payments rp JOIN receivables r ON r.id=rp.receivable_id WHERE r.tenant_id=$1 AND r.outlet_id=$2 AND rp.created_at::date BETWEEN $3::date AND $4::date GROUP BY rp.method
+) z GROUP BY metode ORDER BY penerimaan DESC`,[t,o,from,to])).rows}
  else if(type==='ledger'){title='Buku Besar';note='Disusun dari jurnal operasional ACIS POS dan dikelompokkan menurut akun.';rows=(await pool.query(`SELECT tanggal,kode,akun,referensi,keterangan,debit,kredit,SUM(debit-kredit) OVER(PARTITION BY kode ORDER BY tanggal,referensi ROWS UNBOUNDED PRECEDING)::numeric saldo FROM (SELECT created_at::date tanggal,'1101' kode,'Kas & Bank' akun,invoice referensi,'Penerimaan penjualan' keterangan,LEAST(paid,total)::numeric debit,0::numeric kredit FROM sales WHERE tenant_id=$1 AND outlet_id=$2 AND created_at::date BETWEEN $3::date AND $4::date UNION ALL SELECT created_at::date,'1102','Piutang Usaha',invoice,'Penjualan kredit',GREATEST(total-paid,0),0 FROM sales WHERE tenant_id=$1 AND outlet_id=$2 AND created_at::date BETWEEN $3::date AND $4::date UNION ALL SELECT created_at::date,'4101','Penjualan',invoice,'Pendapatan penjualan',0,total FROM sales WHERE tenant_id=$1 AND outlet_id=$2 AND created_at::date BETWEEN $3::date AND $4::date UNION ALL SELECT created_at::date,'5101','Harga Pokok Penjualan',invoice,'HPP penjualan',cost_total,0 FROM sales WHERE tenant_id=$1 AND outlet_id=$2 AND created_at::date BETWEEN $3::date AND $4::date UNION ALL SELECT created_at::date,'1103','Persediaan',invoice,'Pengurangan persediaan',0,cost_total FROM sales WHERE tenant_id=$1 AND outlet_id=$2 AND created_at::date BETWEEN $3::date AND $4::date UNION ALL SELECT created_at::date,'1103','Persediaan',number,'Pembelian persediaan',total,0 FROM purchases WHERE tenant_id=$1 AND outlet_id=$2 AND created_at::date BETWEEN $3::date AND $4::date UNION ALL SELECT created_at::date,'2101','Hutang Usaha',number,'Pembelian barang',0,total FROM purchases WHERE tenant_id=$1 AND outlet_id=$2 AND created_at::date BETWEEN $3::date AND $4::date UNION ALL SELECT created_at::date,'6101','Beban Operasional',description,'Biaya operasional',amount,0 FROM expenses WHERE tenant_id=$1 AND (outlet_id=$2 OR outlet_id IS NULL) AND created_at::date BETWEEN $3::date AND $4::date UNION ALL SELECT created_at::date,'1101','Kas & Bank',description,'Pembayaran biaya',0,amount FROM expenses WHERE tenant_id=$1 AND (outlet_id=$2 OR outlet_id IS NULL) AND created_at::date BETWEEN $3::date AND $4::date) x ORDER BY kode,tanggal,referensi`,[t,o,from,to])).rows}
  else if(type==='profit_loss'){title='Laporan Laba Rugi';note='Penyajian bertingkat (multi-step) dengan klasifikasi pendapatan, HPP dan beban.';const r=(await pool.query(`SELECT COALESCE((SELECT SUM(total) FROM sales WHERE tenant_id=$1 AND outlet_id=$2 AND created_at::date BETWEEN $3::date AND $4::date),0)::numeric pendapatan,COALESCE((SELECT SUM(cost_total) FROM sales WHERE tenant_id=$1 AND outlet_id=$2 AND created_at::date BETWEEN $3::date AND $4::date),0)::numeric hpp,COALESCE((SELECT SUM(amount) FROM expenses WHERE tenant_id=$1 AND (outlet_id=$2 OR outlet_id IS NULL) AND created_at::date BETWEEN $3::date AND $4::date),0)::numeric biaya`,[t,o,from,to])).rows[0];const pend=n(r.pendapatan),hpp=n(r.hpp),biaya=n(r.biaya),gross=pend-hpp,net=gross-biaya;rows=[{section:'PENDAPATAN',account:'Pendapatan Penjualan',amount:pend},{section:'HARGA POKOK PENJUALAN',account:'Harga Pokok Penjualan',amount:hpp},{section:'LABA KOTOR',account:'Laba Kotor',amount:gross,total:true},{section:'BEBAN OPERASIONAL',account:'Beban Operasional',amount:biaya},{section:'LABA USAHA',account:'Laba Bersih Periode Berjalan',amount:net,total:true}];statement={kind:'profit_loss',totals:{revenue:pend,cogs:hpp,grossProfit:gross,operatingExpenses:biaya,netProfit:net}}}
  else if(type==='balance_sheet'){title='Laporan Posisi Keuangan (Neraca)';note='Penyajian aset, liabilitas dan ekuitas pada tanggal laporan.';const r=(await pool.query(`SELECT COALESCE((SELECT SUM(LEAST(paid,total)) FROM sales WHERE tenant_id=$1 AND outlet_id=$2 AND created_at::date<=$3::date),0)::numeric kas_masuk,COALESCE((SELECT SUM(total) FROM purchases WHERE tenant_id=$1 AND outlet_id=$2 AND created_at::date<=$3::date),0)::numeric pembelian,COALESCE((SELECT SUM(amount) FROM expenses WHERE tenant_id=$1 AND (outlet_id=$2 OR outlet_id IS NULL) AND created_at::date<=$3::date),0)::numeric biaya,COALESCE((SELECT SUM(GREATEST(total-paid,0)) FROM sales WHERE tenant_id=$1 AND outlet_id=$2 AND created_at::date<=$3::date),0)::numeric piutang,COALESCE((SELECT SUM(sb.quantity*p.cost) FROM stock_balances sb JOIN products p ON p.id=sb.product_id WHERE sb.tenant_id=$1 AND sb.outlet_id=$2),0)::numeric persediaan,COALESCE((SELECT SUM(total) FROM purchases WHERE tenant_id=$1 AND outlet_id=$2 AND created_at::date<=$3::date AND status NOT IN ('paid','cancelled')),0)::numeric hutang`,[t,o,to])).rows[0];const kas=n(r.kas_masuk)-n(r.pembelian)-n(r.biaya),piutang=n(r.piutang),persediaan=n(r.persediaan),assets=kas+piutang+persediaan,liabilities=n(r.hutang),equity=assets-liabilities;rows=[{section:'ASET LANCAR',account:'Kas & Bank',amount:kas},{section:'ASET LANCAR',account:'Piutang Usaha',amount:piutang},{section:'ASET LANCAR',account:'Persediaan',amount:persediaan},{section:'TOTAL ASET',account:'Total Aset',amount:assets,total:true},{section:'LIABILITAS JANGKA PENDEK',account:'Hutang Usaha',amount:liabilities},{section:'TOTAL LIABILITAS',account:'Total Liabilitas',amount:liabilities,total:true},{section:'EKUITAS',account:'Modal & Saldo Laba',amount:equity},{section:'TOTAL EKUITAS',account:'Total Ekuitas',amount:equity,total:true},{section:'TOTAL LIABILITAS DAN EKUITAS',account:'Total Liabilitas dan Ekuitas',amount:liabilities+equity,total:true}];statement={kind:'balance_sheet',totals:{assets,liabilities,equity,balanced:Math.abs(assets-(liabilities+equity))<1}}}
@@ -223,7 +231,193 @@ app.put('/api/platform/tenants/:id/users/:userId/status',platformAuth,async(req,
 app.post('/api/platform/tenants/:id/reset-password',platformAuth,async(req,res)=>{const b=req.body||{};const userId=b.userId||(await pool.query(`SELECT tu.user_id FROM tenant_users tu LEFT JOIN roles r ON r.id=tu.role_id WHERE tu.tenant_id=$1 ORDER BY CASE WHEN r.name='Administrator' THEN 0 ELSE 1 END,tu.created_at LIMIT 1`,[req.params.id])).rows[0]?.user_id;if(!userId)return res.status(404).json({error:'User admin tenant tidak ditemukan.'});const temp=b.password||`Acis${Math.random().toString(36).slice(2,7)}!`;const hash=await bcrypt.hash(temp,10);await pool.query(`UPDATE users SET password_hash=$2 WHERE id=$1`,[userId,hash]);res.json({ok:true,temporaryPassword:temp})});
 
 
+
+// --- ACIS POS v2.4: Promo & Loyalty, Return/Void, AR/AP, Split Payment, Offline sync, Device tools ---
+async function resolvePromotion(client,tenantId,promoCode,subtotal,customerId){
+  const codeValue=String(promoCode||'').trim();
+  if(!codeValue)return {discount:0,promotion:null};
+  const p=(await client.query(`SELECT * FROM promotions WHERE tenant_id=$1 AND upper(code)=upper($2) AND active=true
+    AND (starts_at IS NULL OR starts_at<=now()) AND (ends_at IS NULL OR ends_at>=now()) LIMIT 1`,[tenantId,codeValue])).rows[0];
+  if(!p)throw Object.assign(new Error('Kode promo tidak ditemukan atau sudah tidak aktif.'),{status:400});
+  if(n(subtotal)<n(p.min_purchase))throw Object.assign(new Error(`Minimum belanja promo ini adalah Rp ${n(p.min_purchase).toLocaleString('id-ID')}.`),{status:400});
+  if(p.member_only&&!customerId)throw Object.assign(new Error('Promo ini khusus pelanggan/member.'),{status:400});
+  const discount=p.type==='percent'?n(subtotal)*Math.min(100,Math.max(0,n(p.value)))/100:Math.min(n(subtotal),Math.max(0,n(p.value)));
+  return {discount:Math.max(0,discount),promotion:p};
+}
+async function getLoyaltySettings(client,tenantId){
+  await client.query(`INSERT INTO loyalty_settings(tenant_id) VALUES($1) ON CONFLICT(tenant_id) DO NOTHING`,[tenantId]);
+  return (await client.query(`SELECT * FROM loyalty_settings WHERE tenant_id=$1`,[tenantId])).rows[0];
+}
+
+app.get('/api/promotions',auth,async(req,res)=>{
+  const rows=(await pool.query(`SELECT * FROM promotions WHERE tenant_id=$1 ORDER BY active DESC,created_at DESC`,[req.ctx.tenantId])).rows;
+  res.json({items:rows.map(x=>({id:x.id,name:x.name,code:x.code||'',type:x.type,value:n(x.value),minPurchase:n(x.min_purchase),startsAt:x.starts_at,endsAt:x.ends_at,memberOnly:x.member_only,active:x.active}))});
+});
+app.post('/api/promotions',auth,activeSubscription,async(req,res)=>{
+  const b=req.body||{};if(!b.name||!b.type)return res.status(400).json({error:'Nama dan tipe promo wajib diisi.'});
+  const r=(await pool.query(`INSERT INTO promotions(tenant_id,name,code,type,value,min_purchase,starts_at,ends_at,member_only,active)
+    VALUES($1,$2,NULLIF($3,''),$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+    [req.ctx.tenantId,b.name,String(b.code||'').trim(),b.type,n(b.value),n(b.minPurchase),b.startsAt||null,b.endsAt||null,!!b.memberOnly,b.active!==false])).rows[0];
+  await audit(req.ctx,'CREATE','promotion',r.name);res.json({ok:true,id:r.id});
+});
+app.put('/api/promotions/:id',auth,activeSubscription,async(req,res)=>{
+  const b=req.body||{};const r=(await pool.query(`UPDATE promotions SET name=COALESCE($3,name),code=CASE WHEN $4 IS NULL THEN code ELSE NULLIF($4,'') END,
+    type=COALESCE($5,type),value=COALESCE($6,value),min_purchase=COALESCE($7,min_purchase),starts_at=$8,ends_at=$9,
+    member_only=COALESCE($10,member_only),active=COALESCE($11,active),updated_at=now() WHERE id=$1 AND tenant_id=$2 RETURNING *`,
+    [req.params.id,req.ctx.tenantId,b.name??null,b.code===undefined?null:String(b.code||''),b.type??null,b.value==null?null:n(b.value),b.minPurchase==null?null:n(b.minPurchase),b.startsAt||null,b.endsAt||null,b.memberOnly==null?null:!!b.memberOnly,b.active==null?null:!!b.active])).rows[0];
+  if(!r)return res.status(404).json({error:'Promo tidak ditemukan.'});await audit(req.ctx,'UPDATE','promotion',r.name);res.json({ok:true});
+});
+app.delete('/api/promotions/:id',auth,activeSubscription,async(req,res)=>{
+  const r=(await pool.query(`DELETE FROM promotions WHERE id=$1 AND tenant_id=$2 RETURNING name`,[req.params.id,req.ctx.tenantId])).rows[0];
+  if(!r)return res.status(404).json({error:'Promo tidak ditemukan.'});await audit(req.ctx,'DELETE','promotion',r.name);res.json({ok:true});
+});
+app.post('/api/promotions/preview',auth,async(req,res)=>{
+  try{const r=await resolvePromotion(pool,req.ctx.tenantId,req.body.promoCode,n(req.body.subtotal),req.body.customerId||null);res.json({discount:r.discount,name:r.promotion?.name||'',code:r.promotion?.code||''})}
+  catch(e){res.status(e.status||400).json({error:e.message})}
+});
+app.get('/api/loyalty/settings',auth,async(req,res)=>{const x=await getLoyaltySettings(pool,req.ctx.tenantId);res.json({enabled:x.enabled,rupiahPerPoint:n(x.rupiah_per_point),pointValue:n(x.point_value),minRedeemPoints:n(x.min_redeem_points)})});
+app.put('/api/loyalty/settings',auth,activeSubscription,async(req,res)=>{
+  const b=req.body||{};await pool.query(`INSERT INTO loyalty_settings(tenant_id,enabled,rupiah_per_point,point_value,min_redeem_points) VALUES($1,$2,$3,$4,$5)
+    ON CONFLICT(tenant_id) DO UPDATE SET enabled=$2,rupiah_per_point=$3,point_value=$4,min_redeem_points=$5,updated_at=now()`,
+    [req.ctx.tenantId,b.enabled!==false,Math.max(1,n(b.rupiahPerPoint)||10000),Math.max(0,n(b.pointValue)),Math.max(1,Math.floor(n(b.minRedeemPoints)||1))]);
+  await audit(req.ctx,'UPDATE','loyalty','settings');res.json({ok:true});
+});
+app.get('/api/loyalty/transactions',auth,async(req,res)=>{
+  const rows=(await pool.query(`SELECT lt.*,p.name customer,s.invoice FROM loyalty_transactions lt JOIN partners p ON p.id=lt.customer_id LEFT JOIN sales s ON s.id=lt.sale_id
+    WHERE lt.tenant_id=$1 ORDER BY lt.at DESC LIMIT 300`,[req.ctx.tenantId])).rows;res.json({items:rows});
+});
+
+app.post('/api/pos/checkout-v2',auth,activeSubscription,async(req,res)=>{
+  const b=req.body||{};if(!Array.isArray(b.items)||!b.items.length)return res.status(400).json({error:'Keranjang kosong.'});
+  try{
+    const sid=await tx(async c=>{
+      if(b.clientRef){const ex=(await c.query(`SELECT id FROM sales WHERE tenant_id=$1 AND client_ref=$2`,[req.ctx.tenantId,String(b.clientRef)])).rows[0];if(ex)return ex.id}
+      const invoice=code('INV');let subtotal=0,costTotal=0;
+      const itemRows=[];
+      for(const it of b.items){
+        const p=(await c.query(`SELECT * FROM products WHERE id=$1 AND tenant_id=$2 AND active=true`,[it.productId,req.ctx.tenantId])).rows[0];
+        if(!p)throw Object.assign(new Error('Produk pada keranjang tidak valid.'),{status:400});
+        const qty=n(it.qty),price=n(it.price??p.price);if(qty<=0)throw Object.assign(new Error('Qty harus lebih dari 0.'),{status:400});
+        const bal=(await c.query(`SELECT quantity FROM stock_balances WHERE tenant_id=$1 AND outlet_id=$2 AND product_id=$3 FOR UPDATE`,[req.ctx.tenantId,req.ctx.outletId,p.id])).rows[0]||{quantity:0};
+        if(n(bal.quantity)<qty)throw Object.assign(new Error(`Stok ${p.name} tidak cukup.`),{status:400});
+        itemRows.push({p,qty,price,balance:n(bal.quantity)});subtotal+=qty*price;costTotal+=qty*n(p.cost);
+      }
+      const promo=await resolvePromotion(c,req.ctx.tenantId,b.promoCode,subtotal,b.customerId||null);
+      const manualDiscount=Math.max(0,n(b.discount));let afterPromo=Math.max(0,subtotal-manualDiscount-promo.discount);
+      const loyalty=await getLoyaltySettings(c,req.ctx.tenantId);
+      let redeemPoints=Math.max(0,Math.floor(n(b.redeemPoints))),pointDiscount=0,customer=null;
+      if(b.customerId){
+        customer=(await c.query(`SELECT * FROM partners WHERE id=$1 AND tenant_id=$2 AND type='customer' FOR UPDATE`,[b.customerId,req.ctx.tenantId])).rows[0];
+        if(!customer)throw Object.assign(new Error('Pelanggan tidak valid.'),{status:400});
+        if(!loyalty.enabled)redeemPoints=0;
+        if(redeemPoints&&redeemPoints<n(loyalty.min_redeem_points))throw Object.assign(new Error(`Minimum redeem ${loyalty.min_redeem_points} poin.`),{status:400});
+        if(redeemPoints>n(customer.points))throw Object.assign(new Error('Poin pelanggan tidak mencukupi.'),{status:400});
+        pointDiscount=Math.min(afterPromo,redeemPoints*n(loyalty.point_value));
+      }else redeemPoints=0;
+      const total=Math.max(0,afterPromo-pointDiscount);
+      let payments=Array.isArray(b.payments)?b.payments.map(x=>({method:String(x.method||'cash'),amount:Math.max(0,n(x.amount)),reference:String(x.reference||'')})).filter(x=>x.amount>0):[];
+      if(!payments.length&&b.paymentMethod!=='credit'&&n(b.paid)>0)payments=[{method:String(b.paymentMethod||'cash'),amount:n(b.paid),reference:''}];
+      const paidTotal=payments.reduce((a,x)=>a+x.amount,0);
+      if(paidTotal+0.001<total&&!customer)throw Object.assign(new Error('Pembayaran kurang. Pilih pelanggan jika transaksi akan menjadi piutang.'),{status:400});
+      const paymentMethod=paidTotal+0.001<total?'credit':(payments.length>1?'split':(payments[0]?.method||b.paymentMethod||'cash'));
+      const openShift=(await c.query(`SELECT id FROM cashier_shifts WHERE tenant_id=$1 AND outlet_id=$2 AND user_id=$3 AND status='open' ORDER BY opened_at DESC LIMIT 1`,[req.ctx.tenantId,req.ctx.outletId,req.ctx.user.id])).rows[0];
+      const sale=(await c.query(`INSERT INTO sales(tenant_id,outlet_id,invoice,cashier_user_id,cashier_name,customer_id,payment_method,subtotal,discount,promo_discount,promo_code,total,paid,cost_total,points_redeemed,due_date,shift_id,client_ref)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING id`,
+        [req.ctx.tenantId,req.ctx.outletId,invoice,req.ctx.user.id,req.ctx.user.name,b.customerId||null,paymentMethod,subtotal,manualDiscount+promo.discount+pointDiscount,promo.discount,promo.promotion?.code||'',total,paidTotal,costTotal,redeemPoints,b.dueDate||null,openShift?.id||null,b.clientRef||null])).rows[0];
+      for(const x of itemRows){
+        const next=x.balance-x.qty;await c.query(`UPDATE stock_balances SET quantity=$4,updated_at=now() WHERE tenant_id=$1 AND outlet_id=$2 AND product_id=$3`,[req.ctx.tenantId,req.ctx.outletId,x.p.id,next]);
+        const sub=x.qty*x.price;await c.query(`INSERT INTO sale_items(tenant_id,sale_id,product_id,sku,name,qty,price,cost,subtotal) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`,[req.ctx.tenantId,sale.id,x.p.id,x.p.sku,x.p.name,x.qty,x.price,n(x.p.cost),sub]);
+        await c.query(`INSERT INTO stock_ledger(tenant_id,outlet_id,product_id,type,qty_out,balance,reference,note,user_id) VALUES($1,$2,$3,'sale',$4,$5,$6,'Penjualan POS',$7)`,[req.ctx.tenantId,req.ctx.outletId,x.p.id,x.qty,next,invoice,req.ctx.user.id]);
+      }
+      for(const p of payments)await c.query(`INSERT INTO sale_payments(tenant_id,sale_id,method,amount,reference) VALUES($1,$2,$3,$4,$5)`,[req.ctx.tenantId,sale.id,p.method,p.amount,p.reference]);
+      if(customer){
+        let earned=loyalty.enabled?Math.floor(total/Math.max(1,n(loyalty.rupiah_per_point))):0;
+        const nextPoints=Math.max(0,n(customer.points)-redeemPoints+earned);
+        await c.query(`UPDATE partners SET points=$3 WHERE id=$1 AND tenant_id=$2`,[customer.id,req.ctx.tenantId,nextPoints]);
+        if(redeemPoints)await c.query(`INSERT INTO loyalty_transactions(tenant_id,customer_id,sale_id,type,points,note) VALUES($1,$2,$3,'redeem',$4,$5)`,[req.ctx.tenantId,customer.id,sale.id,-redeemPoints,`Redeem ${invoice}`]);
+        if(earned)await c.query(`INSERT INTO loyalty_transactions(tenant_id,customer_id,sale_id,type,points,note) VALUES($1,$2,$3,'earn',$4,$5)`,[req.ctx.tenantId,customer.id,sale.id,earned,`Poin dari ${invoice}`]);
+        await c.query(`UPDATE sales SET points_earned=$2 WHERE id=$1`,[sale.id,earned]);
+        const outstanding=Math.max(0,total-paidTotal);
+        if(outstanding>0)await c.query(`INSERT INTO receivables(tenant_id,outlet_id,customer_id,sale_id,number,original_amount,paid_amount,due_date) VALUES($1,$2,$3,$4,$5,$6,0,$7)`,
+          [req.ctx.tenantId,req.ctx.outletId,customer.id,sale.id,`AR-${invoice}`,outstanding,b.dueDate||null]);
+      }
+      return sale.id;
+    });
+    const out=await saleWithItems(sid,req.ctx);out.payments=(await pool.query(`SELECT method,amount,reference FROM sale_payments WHERE tenant_id=$1 AND sale_id=$2 ORDER BY created_at`,[req.ctx.tenantId,sid])).rows.map(x=>({...x,amount:n(x.amount)}));
+    await audit(req.ctx,'CHECKOUT','sale',out.invoice);res.json(out);
+  }catch(e){res.status(e.status||400).json({error:e.message})}
+});
+
+app.get('/api/returns',auth,async(req,res)=>{
+  const rows=(await pool.query(`SELECT r.*,s.invoice,u.name created_by_name,COALESCE(json_agg(json_build_object('name',ri.name,'qty',ri.qty,'amount',ri.amount)) FILTER(WHERE ri.id IS NOT NULL),'[]') items
+    FROM sale_returns r JOIN sales s ON s.id=r.sale_id LEFT JOIN users u ON u.id=r.created_by LEFT JOIN sale_return_items ri ON ri.return_id=r.id
+    WHERE r.tenant_id=$1 AND r.outlet_id=$2 GROUP BY r.id,s.invoice,u.name ORDER BY r.created_at DESC LIMIT 300`,[req.ctx.tenantId,req.ctx.outletId])).rows;res.json({items:rows});
+});
+app.post('/api/sales/:id/return',auth,activeSubscription,async(req,res)=>{
+  const b=req.body||{};if(!String(b.reason||'').trim())return res.status(400).json({error:'Alasan retur wajib diisi.'});
+  try{const number=await tx(async c=>{
+    const sale=(await c.query(`SELECT * FROM sales WHERE id=$1 AND tenant_id=$2 AND outlet_id=$3 FOR UPDATE`,[req.params.id,req.ctx.tenantId,req.ctx.outletId])).rows[0];if(!sale)throw Object.assign(new Error('Penjualan tidak ditemukan.'),{status:404});if(sale.status==='void')throw Object.assign(new Error('Transaksi sudah di-void.'),{status:409});
+    const items=(await c.query(`SELECT * FROM sale_items WHERE sale_id=$1 AND tenant_id=$2`,[sale.id,req.ctx.tenantId])).rows;const requested=Array.isArray(b.items)?b.items:[];
+    const retNo=code('RET');const ret=(await c.query(`INSERT INTO sale_returns(tenant_id,outlet_id,sale_id,number,type,reason,refund_method,created_by) VALUES($1,$2,$3,$4,'return',$5,$6,$7) RETURNING id`,[req.ctx.tenantId,req.ctx.outletId,sale.id,retNo,String(b.reason),String(b.refundMethod||'cash'),req.ctx.user.id])).rows[0];
+    let refund=0;
+    for(const si of items){
+      const rq=requested.find(x=>x.saleItemId===si.id||x.productId===si.product_id);const qty=Math.max(0,n(rq?.qty));if(!qty)continue;
+      const returned=n((await c.query(`SELECT COALESCE(SUM(ri.qty),0) q FROM sale_return_items ri JOIN sale_returns r ON r.id=ri.return_id WHERE r.sale_id=$1 AND ri.sale_item_id=$2`,[sale.id,si.id])).rows[0].q);
+      if(returned+qty>n(si.qty))throw Object.assign(new Error(`Qty retur ${si.name} melebihi qty penjualan.`),{status:400});
+      const discountRatio=n(sale.subtotal)>0?n(sale.total)/n(sale.subtotal):1;const amount=qty*n(si.price)*discountRatio;refund+=amount;await c.query(`INSERT INTO sale_return_items(tenant_id,return_id,sale_item_id,product_id,name,qty,price,amount) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,[req.ctx.tenantId,ret.id,si.id,si.product_id,si.name,qty,n(si.price),amount]);
+      const bal=(await c.query(`INSERT INTO stock_balances(tenant_id,outlet_id,product_id,quantity) VALUES($1,$2,$3,$4) ON CONFLICT(tenant_id,outlet_id,product_id) DO UPDATE SET quantity=stock_balances.quantity+$4,updated_at=now() RETURNING quantity`,[req.ctx.tenantId,req.ctx.outletId,si.product_id,qty])).rows[0];
+      await c.query(`INSERT INTO stock_ledger(tenant_id,outlet_id,product_id,type,qty_in,balance,reference,note,user_id) VALUES($1,$2,$3,'sale_return',$4,$5,$6,$7,$8)`,[req.ctx.tenantId,req.ctx.outletId,si.product_id,qty,bal.quantity,retNo,String(b.reason),req.ctx.user.id]);
+    }
+    if(refund<=0)throw Object.assign(new Error('Pilih minimal satu item untuk diretur.'),{status:400});
+    await c.query(`UPDATE sale_returns SET refund_amount=$2 WHERE id=$1`,[ret.id,refund]);return retNo;
+  });await audit(req.ctx,'RETURN','sale',number);res.json({ok:true,number})}catch(e){res.status(e.status||400).json({error:e.message})}
+});
+app.post('/api/sales/:id/void',auth,activeSubscription,async(req,res)=>{
+  const b=req.body||{};if(!String(b.reason||'').trim())return res.status(400).json({error:'Alasan void wajib diisi.'});
+  try{const no=await tx(async c=>{
+    const sale=(await c.query(`SELECT * FROM sales WHERE id=$1 AND tenant_id=$2 AND outlet_id=$3 FOR UPDATE`,[req.params.id,req.ctx.tenantId,req.ctx.outletId])).rows[0];if(!sale)throw Object.assign(new Error('Penjualan tidak ditemukan.'),{status:404});if(sale.status==='void')throw Object.assign(new Error('Transaksi sudah di-void.'),{status:409});
+    const prior=(await c.query(`SELECT 1 FROM sale_returns WHERE sale_id=$1 LIMIT 1`,[sale.id])).rowCount;if(prior)throw Object.assign(new Error('Transaksi yang sudah pernah diretur tidak dapat di-void penuh.'),{status:409});
+    const items=(await c.query(`SELECT * FROM sale_items WHERE sale_id=$1 AND tenant_id=$2`,[sale.id,req.ctx.tenantId])).rows;const retNo=code('VOID');
+    const ret=(await c.query(`INSERT INTO sale_returns(tenant_id,outlet_id,sale_id,number,type,reason,refund_method,refund_amount,created_by) VALUES($1,$2,$3,$4,'void',$5,$6,$7,$8) RETURNING id`,[req.ctx.tenantId,req.ctx.outletId,sale.id,retNo,String(b.reason),String(b.refundMethod||'cash'),n(sale.total),req.ctx.user.id])).rows[0];
+    for(const si of items){await c.query(`INSERT INTO sale_return_items(tenant_id,return_id,sale_item_id,product_id,name,qty,price,amount) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,[req.ctx.tenantId,ret.id,si.id,si.product_id,si.name,n(si.qty),n(si.price),n(si.subtotal)]);const bal=(await c.query(`UPDATE stock_balances SET quantity=quantity+$4,updated_at=now() WHERE tenant_id=$1 AND outlet_id=$2 AND product_id=$3 RETURNING quantity`,[req.ctx.tenantId,req.ctx.outletId,si.product_id,n(si.qty)])).rows[0];await c.query(`INSERT INTO stock_ledger(tenant_id,outlet_id,product_id,type,qty_in,balance,reference,note,user_id) VALUES($1,$2,$3,'sale_void',$4,$5,$6,$7,$8)`,[req.ctx.tenantId,req.ctx.outletId,si.product_id,n(si.qty),bal?.quantity||n(si.qty),retNo,String(b.reason),req.ctx.user.id])}
+    if(sale.customer_id){await c.query(`UPDATE partners SET points=GREATEST(0,points-$3)+$4 WHERE id=$1 AND tenant_id=$2`,[sale.customer_id,req.ctx.tenantId,n(sale.points_earned),n(sale.points_redeemed)]);if(n(sale.points_earned))await c.query(`INSERT INTO loyalty_transactions(tenant_id,customer_id,sale_id,type,points,note) VALUES($1,$2,$3,'reversal',$4,$5)`,[req.ctx.tenantId,sale.customer_id,sale.id,-n(sale.points_earned),`Void ${sale.invoice}`]);if(n(sale.points_redeemed))await c.query(`INSERT INTO loyalty_transactions(tenant_id,customer_id,sale_id,type,points,note) VALUES($1,$2,$3,'reversal',$4,$5)`,[req.ctx.tenantId,sale.customer_id,sale.id,n(sale.points_redeemed),`Pengembalian poin void ${sale.invoice}`])}
+    await c.query(`UPDATE receivables SET status='cancelled' WHERE tenant_id=$1 AND sale_id=$2 AND status='open'`,[req.ctx.tenantId,sale.id]);await c.query(`UPDATE sales SET status='void',void_reason=$3,voided_at=now(),voided_by=$4 WHERE id=$1 AND tenant_id=$2`,[sale.id,req.ctx.tenantId,String(b.reason),req.ctx.user.id]);return retNo;
+  });await audit(req.ctx,'VOID','sale',no);res.json({ok:true,number:no})}catch(e){res.status(e.status||400).json({error:e.message})}
+});
+
+app.get('/api/finance/receivables',auth,async(req,res)=>{
+  const rows=(await pool.query(`SELECT r.*,p.name partner,s.invoice,(r.original_amount-r.paid_amount) balance FROM receivables r JOIN partners p ON p.id=r.customer_id LEFT JOIN sales s ON s.id=r.sale_id WHERE r.tenant_id=$1 AND r.outlet_id=$2 ORDER BY (r.status='open') DESC,r.due_date NULLS LAST,r.created_at DESC`,[req.ctx.tenantId,req.ctx.outletId])).rows;res.json({items:rows});
+});
+app.post('/api/finance/receivables/:id/pay',auth,activeSubscription,async(req,res)=>{
+  const amount=Math.max(0,n(req.body.amount));if(!amount)return res.status(400).json({error:'Jumlah pembayaran harus lebih dari 0.'});
+  const out=await tx(async c=>{const r=(await c.query(`SELECT * FROM receivables WHERE id=$1 AND tenant_id=$2 AND outlet_id=$3 FOR UPDATE`,[req.params.id,req.ctx.tenantId,req.ctx.outletId])).rows[0];if(!r)return null;const bal=n(r.original_amount)-n(r.paid_amount),pay=Math.min(bal,amount);await c.query(`INSERT INTO receivable_payments(tenant_id,receivable_id,amount,method,reference,user_id) VALUES($1,$2,$3,$4,$5,$6)`,[req.ctx.tenantId,r.id,pay,req.body.method||'cash',req.body.reference||'',req.ctx.user.id]);const paid=n(r.paid_amount)+pay,status=paid+0.001>=n(r.original_amount)?'paid':'open';await c.query(`UPDATE receivables SET paid_amount=$2,status=$3 WHERE id=$1`,[r.id,paid,status]);if(r.sale_id)await c.query(`UPDATE sales SET paid=LEAST(total,paid+$2) WHERE id=$1`,[r.sale_id,pay]);return {paid,status}});if(!out)return res.status(404).json({error:'Piutang tidak ditemukan.'});await audit(req.ctx,'PAY','receivable',req.params.id);res.json({ok:true,...out});
+});
+app.get('/api/finance/payables',auth,async(req,res)=>{
+  const rows=(await pool.query(`SELECT pbl.*,p.name partner,pu.number purchase_number,(pbl.original_amount-pbl.paid_amount) balance FROM payables pbl JOIN partners p ON p.id=pbl.supplier_id LEFT JOIN purchases pu ON pu.id=pbl.purchase_id WHERE pbl.tenant_id=$1 AND pbl.outlet_id=$2 ORDER BY (pbl.status='open') DESC,pbl.due_date NULLS LAST,pbl.created_at DESC`,[req.ctx.tenantId,req.ctx.outletId])).rows;res.json({items:rows});
+});
+app.post('/api/finance/payables/:id/pay',auth,activeSubscription,async(req,res)=>{
+  const amount=Math.max(0,n(req.body.amount));if(!amount)return res.status(400).json({error:'Jumlah pembayaran harus lebih dari 0.'});
+  const out=await tx(async c=>{const r=(await c.query(`SELECT * FROM payables WHERE id=$1 AND tenant_id=$2 AND outlet_id=$3 FOR UPDATE`,[req.params.id,req.ctx.tenantId,req.ctx.outletId])).rows[0];if(!r)return null;const bal=n(r.original_amount)-n(r.paid_amount),pay=Math.min(bal,amount);await c.query(`INSERT INTO payable_payments(tenant_id,payable_id,amount,method,reference,user_id) VALUES($1,$2,$3,$4,$5,$6)`,[req.ctx.tenantId,r.id,pay,req.body.method||'cash',req.body.reference||'',req.ctx.user.id]);const paid=n(r.paid_amount)+pay,status=paid+0.001>=n(r.original_amount)?'paid':'open';await c.query(`UPDATE payables SET paid_amount=$2,status=$3 WHERE id=$1`,[r.id,paid,status]);if(r.purchase_id)await c.query(`UPDATE purchases SET paid_amount=LEAST(total,paid_amount+$2) WHERE id=$1`,[r.purchase_id,pay]);return {paid,status}});if(!out)return res.status(404).json({error:'Hutang tidak ditemukan.'});await audit(req.ctx,'PAY','payable',req.params.id);res.json({ok:true,...out});
+});
+
+app.post('/api/purchases-v2',auth,activeSubscription,async(req,res)=>{
+  const b=req.body||{};if(!Array.isArray(b.items)||!b.items.length)return res.status(400).json({error:'Item pembelian kosong.'});
+  try{const id=await tx(async c=>{const number=code('PUR');const po=(await c.query(`INSERT INTO purchases(tenant_id,outlet_id,number,supplier_id,status,note,due_date) VALUES($1,$2,$3,$4,'posted',$5,$6) RETURNING id`,[req.ctx.tenantId,req.ctx.outletId,number,b.supplierId||null,b.note||'',b.dueDate||null])).rows[0];let total=0;
+    for(const it of b.items){const p=(await c.query(`SELECT * FROM products WHERE id=$1 AND tenant_id=$2 AND active=true`,[it.productId,req.ctx.tenantId])).rows[0];if(!p)continue;const qty=n(it.qty),cost=n(it.cost??p.cost),sub=qty*cost;total+=sub;await c.query(`INSERT INTO purchase_items(tenant_id,purchase_id,product_id,name,qty,cost,subtotal) VALUES($1,$2,$3,$4,$5,$6,$7)`,[req.ctx.tenantId,po.id,p.id,p.name,qty,cost,sub]);const bal=(await c.query(`INSERT INTO stock_balances(tenant_id,outlet_id,product_id,quantity) VALUES($1,$2,$3,$4) ON CONFLICT(tenant_id,outlet_id,product_id) DO UPDATE SET quantity=stock_balances.quantity+$4,updated_at=now() RETURNING quantity`,[req.ctx.tenantId,req.ctx.outletId,p.id,qty])).rows[0];await c.query(`UPDATE products SET cost=$3,updated_at=now() WHERE id=$1 AND tenant_id=$2`,[p.id,req.ctx.tenantId,cost]);await c.query(`INSERT INTO stock_ledger(tenant_id,outlet_id,product_id,type,qty_in,balance,reference,note,user_id) VALUES($1,$2,$3,'purchase',$4,$5,$6,'Pembelian',$7)`,[req.ctx.tenantId,req.ctx.outletId,p.id,qty,bal.quantity,number,req.ctx.user.id])}
+    const paid=b.paidAmount===undefined?total:Math.max(0,Math.min(total,n(b.paidAmount)));await c.query(`UPDATE purchases SET total=$2,paid_amount=$3 WHERE id=$1`,[po.id,total,paid]);
+    if(b.supplierId&&paid+0.001<total)await c.query(`INSERT INTO payables(tenant_id,outlet_id,supplier_id,purchase_id,number,original_amount,paid_amount,due_date) VALUES($1,$2,$3,$4,$5,$6,0,$7)`,[req.ctx.tenantId,req.ctx.outletId,b.supplierId,po.id,`AP-${number}`,total-paid,b.dueDate||null]);return po.id;
+  });const out=await purchaseWithItems(id,req.ctx);await audit(req.ctx,'CREATE','purchase',out.number);res.json(out)}catch(e){res.status(e.status||400).json({error:e.message})}
+});
+
+app.get('/api/device-settings',auth,async(req,res)=>{
+  const x=(await pool.query(`SELECT receipt_paper_width,receipt_auto_print,barcode_label_width FROM tenant_settings WHERE tenant_id=$1`,[req.ctx.tenantId])).rows[0]||{};
+  res.json({receiptPaperWidth:n(x.receipt_paper_width)||80,receiptAutoPrint:x.receipt_auto_print!==false,barcodeLabelWidth:n(x.barcode_label_width)||50});
+});
+app.put('/api/device-settings',auth,activeSubscription,async(req,res)=>{
+  const b=req.body||{};await pool.query(`UPDATE tenant_settings SET receipt_paper_width=$2,receipt_auto_print=$3,barcode_label_width=$4,updated_at=now() WHERE tenant_id=$1`,[req.ctx.tenantId,n(b.receiptPaperWidth)||80,b.receiptAutoPrint!==false,n(b.barcodeLabelWidth)||50]);res.json({ok:true});
+});
+
 app.get('/admin',(_req,res)=>res.sendFile(path.join(__dirname,'public','admin.html')));
 app.get('*',(req,res)=>{if(req.path.startsWith('/api/'))return res.status(404).json({error:'Endpoint tidak ditemukan.'});res.sendFile(path.join(__dirname,'public','index.html'))});
 app.use((err,req,res,next)=>{console.error(err);if(res.headersSent)return next(err);res.status(err.status||500).json({error:err.message||'Terjadi kesalahan pada server.'})});
-app.listen(PORT,'0.0.0.0',()=>console.log(`${APP_NAME} v2.2.0 listening on ${PORT}`));
+app.listen(PORT,'0.0.0.0',()=>console.log(`${APP_NAME} v2.4.0 listening on ${PORT}`));

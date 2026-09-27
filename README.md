@@ -1,11 +1,15 @@
-# ACIS POS v2.3.1 — SaaS Business Edition
+# ACIS POS v2.4.1 — SaaS Business Edition
 
 **Tagline:** Solusi Kasir Cerdas untuk Bisnis Bertumbuh.
 
 Versi 2.3 mempertahankan PostgreSQL multi-tenant dan memperbarui pengalaman customer serta kontrol internal ACIS.
 
 
-## Update utama v2.3.1
+## Update utama v2.4.1
+
+- Admin ACIS dapat mengganti password sendiri dari halaman `/admin` melalui tombol **Ganti Password**.
+- Perubahan password memverifikasi password lama dan menyimpan hash bcrypt baru.
+
 
 - Registrasi akun mandiri dari halaman login dengan **trial otomatis 7 hari**.
 - Halaman login customer tidak lagi menampilkan istilah teknis database/arsitektur.
@@ -73,3 +77,13 @@ Ganti password untuk produksi. Admin ACIS dapat:
 ## Catatan akuntansi
 
 ACIS POS menyediakan struktur COA dasar dan laporan keuangan operasional. Untuk implementasi akuntansi PSAK penuh, lanjutkan dengan saldo awal, jurnal penyesuaian, kas/bank terpisah, pembayaran hutang/piutang, pajak, periode akuntansi, closing, aset tetap, dan rekonsiliasi.
+
+## Fitur baru v2.4
+- Promo & Loyalty: voucher/diskon, promo khusus member, aturan perolehan dan redeem poin.
+- Retur & Void: retur parsial/full, alasan wajib, pengembalian stok, audit trail.
+- Hutang & Piutang: transaksi kredit, jatuh tempo, cicilan penerimaan/pembayaran, saldo terbuka.
+- Split Payment: satu transaksi dapat dibayar dengan beberapa metode.
+- Offline/PWA: shell aplikasi dicache dan transaksi checkout dapat diantrikan lokal saat internet putus lalu disinkronkan kembali.
+- Printer & Barcode: pengaturan 58/80mm, test print, scanner kamera via BarcodeDetector jika didukung browser, scanner USB/keyboard, dan cetak label produk.
+
+> Catatan offline: mode PWA v2.4 menjaga shell aplikasi dan antrean transaksi POS. Master data yang belum pernah dimuat tetap memerlukan koneksi; konflik stok saat sinkronisasi akan ditahan sebagai transaksi pending untuk diperiksa.

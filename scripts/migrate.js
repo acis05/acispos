@@ -7,6 +7,6 @@ if(!process.env.DATABASE_URL){console.error('DATABASE_URL wajib diisi.');process
 const sql=fs.readFileSync(path.join(__dirname,'..','db','schema.sql'),'utf8');
 try{
   await pool.query(sql);
-  await pool.query("INSERT INTO schema_migrations(version) VALUES('2.2.0') ON CONFLICT(version) DO NOTHING");
-  console.log('Database migration v2.2.0 selesai.');
+  await pool.query("INSERT INTO schema_migrations(version) VALUES('2.4.0') ON CONFLICT(version) DO NOTHING");
+  console.log('Database migration v2.4.0 selesai.');
 }finally{await pool.end()}

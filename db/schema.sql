@@ -497,3 +497,34 @@ ALTER TABLE tenant_settings ADD COLUMN IF NOT EXISTS barcode_label_width integer
 INSERT INTO loyalty_settings(tenant_id)
 SELECT id FROM tenants
 ON CONFLICT(tenant_id) DO NOTHING;
+
+
+-- v2.7 additions: grouped/recipe products and sale component snapshots
+ALTER TABLE products ADD COLUMN IF NOT EXISTS product_type varchar(20) NOT NULL DEFAULT 'standard';
+DO $$ BEGIN
+  ALTER TABLE products ADD CONSTRAINT chk_products_type CHECK(product_type IN ('standard','grouping'));
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+CREATE TABLE IF NOT EXISTS recipe_components (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  group_product_id uuid NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  component_product_id uuid NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
+  quantity numeric(15,4) NOT NULL CHECK(quantity > 0),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(tenant_id, group_product_id, component_product_id),
+  CHECK(group_product_id <> component_product_id)
+);
+CREATE INDEX IF NOT EXISTS idx_recipe_group ON recipe_components(tenant_id,group_product_id);
+
+CREATE TABLE IF NOT EXISTS sale_item_components (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  sale_item_id uuid NOT NULL REFERENCES sale_items(id) ON DELETE CASCADE,
+  component_product_id uuid NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
+  component_name varchar(180) NOT NULL,
+  qty_per_sale_unit numeric(15,4) NOT NULL CHECK(qty_per_sale_unit > 0),
+  unit_cost numeric(15,2) NOT NULL DEFAULT 0,
+  UNIQUE(tenant_id,sale_item_id,component_product_id)
+);
+CREATE INDEX IF NOT EXISTS idx_sale_item_components ON sale_item_components(tenant_id,sale_item_id);

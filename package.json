@@ -1,8 +1,8 @@
 {
   "name": "acis-pos-saas",
-  "version": "2.5.3",
+  "version": "2.7.0",
   "private": true,
-  "description": "ACIS POS SaaS v2.5.3 - barcode and QR code product labels plus cashier payment details",
+  "description": "ACIS POS SaaS v2.7.0 - quick cash, grouped/recipe products, moving average costing, offline-first cashier",
   "type": "module",
   "scripts": {
     "migrate": "node scripts/migrate.js",

@@ -91,3 +91,19 @@ ACIS POS menyediakan struktur COA dasar dan laporan keuangan operasional. Untuk 
 
 ### Label produk
 Menu Printer & Barcode mendukung label **Barcode Code 128** dan **QR Code** dengan mode A4 Grid atau Single Label.
+
+
+## Offline-first v2.6
+Kasir dapat tetap bekerja saat internet putus setelah perangkat pernah login online. Data POS penting disimpan di IndexedDB dan transaksi offline akan disinkronkan otomatis saat koneksi kembali. Akses offline dibatasi 72 jam sejak verifikasi online terakhir untuk menjaga kontrol akun/langganan.
+
+## v2.7 — Quick Cash, Resep & Grouping, Moving Average
+
+- Layar pembayaran tunai memiliki tombol cepat Rp10.000, Rp20.000, Rp50.000, Rp100.000 dan Uang Pas.
+- Menu **Resep & Grouping** tersedia pada modul Persediaan.
+- Produk grouping dapat terdiri dari beberapa produk bahan dengan kuantitas per 1 unit penjualan.
+- Penjualan produk grouping mengurangi stok komponen bahan secara otomatis.
+- Ketersediaan produk grouping dihitung dari komponen yang paling membatasi.
+- HPP produk grouping dihitung dari total HPP average komponen.
+- Pembelian memperbarui HPP produk standar memakai metode moving average.
+- Retur, void, dan penghapusan transaksi mengembalikan komponen grouping berdasarkan snapshot resep saat transaksi terjadi.
+- Cache offline menyimpan komposisi grouping dan mengurangi stok komponen lokal saat kasir offline.

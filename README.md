@@ -87,3 +87,7 @@ ACIS POS menyediakan struktur COA dasar dan laporan keuangan operasional. Untuk 
 - Printer & Barcode: pengaturan 58/80mm, test print, scanner kamera via BarcodeDetector jika didukung browser, scanner USB/keyboard, dan cetak label produk.
 
 > Catatan offline: mode PWA v2.4 menjaga shell aplikasi dan antrean transaksi POS. Master data yang belum pernah dimuat tetap memerlukan koneksi; konflik stok saat sinkronisasi akan ditahan sebagai transaksi pending untuk diperiksa.
+
+
+### Label produk
+Menu Printer & Barcode mendukung label **Barcode Code 128** dan **QR Code** dengan mode A4 Grid atau Single Label.

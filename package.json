@@ -1,8 +1,8 @@
 {
   "name": "acis-pos-saas",
-  "version": "2.5.2",
+  "version": "2.5.3",
   "private": true,
-  "description": "ACIS POS SaaS v2.5.2 - improved barcode label printing and cashier payment details",
+  "description": "ACIS POS SaaS v2.5.3 - barcode and QR code product labels plus cashier payment details",
   "type": "module",
   "scripts": {
     "migrate": "node scripts/migrate.js",
@@ -20,6 +20,7 @@
     "pg": "^8.13.1",
     "express-async-errors": "^3.1.1",
     "exceljs": "^4.4.0",
-    "pdfkit": "^0.16.0"
+    "pdfkit": "^0.16.0",
+    "qrcode": "^1.5.4"
   }
 }

@@ -8,6 +8,7 @@ import { pool, tx } from './scripts/db.js';
 import ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
 import crypto from 'crypto';
+import QRCode from 'qrcode';
 
 const __dirname=path.dirname(fileURLToPath(import.meta.url));
 const PORT=Number(process.env.PORT||3000);
@@ -65,7 +66,15 @@ async function accurateRefreshIfNeeded(tenantId,row){if(!row?.access_token)retur
 function activeSubscription(req,res,next){const s=req.ctx.subscription;if(!s)return res.status(402).json({error:'Langganan belum aktif.'});const deadline=new Date(s.grace_until||s.expires_at);if(['cancelled','suspended'].includes(s.status)||deadline<new Date())return res.status(402).json({error:'Langganan ACIS POS telah berakhir. Silakan perpanjang untuk melanjutkan transaksi.'});next()}
 const safeUser=(u,ctx)=>({id:u.id,name:u.name,username:u.username,email:u.email||'',role:ctx.role,active:u.active,createdAt:u.created_at,tenant:{id:ctx.tenantId,name:ctx.tenantName},outlet:{id:ctx.outletId,name:ctx.outletName},subscription:ctx.subscription});
 
-app.get('/api/health',async(req,res)=>{try{await pool.query('SELECT 1');res.json({status:'ok',app:APP_NAME,version:'2.4.0',database:'postgresql',multiTenant:true,time:now()})}catch(e){res.status(503).json({status:'error',database:'unavailable'})}});
+app.get('/api/health',async(req,res)=>{try{await pool.query('SELECT 1');res.json({status:'ok',app:APP_NAME,version:'2.5.3',database:'postgresql',multiTenant:true,time:now()})}catch(e){res.status(503).json({status:'error',database:'unavailable'})}});
+
+app.post('/api/tools/qrcode',auth,async(req,res)=>{
+  const text=String(req.body?.text||'').trim();
+  if(!text)return res.status(400).json({error:'Nilai QR Code tidak boleh kosong.'});
+  if(text.length>512)return res.status(400).json({error:'Nilai QR Code terlalu panjang.'});
+  const svg=await QRCode.toString(text,{type:'svg',errorCorrectionLevel:'M',margin:0,width:256,color:{dark:'#111111',light:'#ffffff'}});
+  res.json({svg});
+});
 
 app.post('/api/login',async(req,res)=>{
   const {username,password,tenantId,outletId}=req.body||{};
